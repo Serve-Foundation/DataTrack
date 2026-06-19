@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk '/^const [A-Z]/ {print NR\": \"$0}' /Users/greshashah126/Desktop/DataTrack/DataTrack_v11plus.jsx)"
+    ],
+    "additionalDirectories": [
+      "/Users/greshashah126/.claude/plans"
+    ]
+  }
+}
