@@ -21,6 +21,7 @@ DataTrack helps a data acquisition team manage:
 
 | File | Purpose |
 | --- | --- |
+| `index.html` | GitHub Pages entry point for the clean root URL. |
 | `DataTrack_v11plus.html` | Runnable app. Open this in a browser or serve it locally. |
 | `DataTrack_v11plus.jsx` | Main JSX source for the app. |
 | `DataTrack_v11plus_dev.jsx` | ES module development version. |
@@ -43,7 +44,7 @@ python3 -m http.server 5174
 Then open:
 
 ```text
-http://localhost:5174/DataTrack_v11plus.html
+http://localhost:5174/
 ```
 
 If port `5174` is already in use, choose another port:
@@ -72,7 +73,7 @@ Update these in:
 In Supabase, also add the local app URL to Auth redirect URLs:
 
 ```text
-http://localhost:5174/DataTrack_v11plus.html
+http://localhost:5174/
 ```
 
 If the app shows that the Supabase project URL is not resolving, replace the hardcoded Supabase URL/key with the values from **Supabase Project Settings > API**.
