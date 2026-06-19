@@ -1,21 +1,60 @@
 # DataTrack
 
-DataTrack is a data acquisition CRM for tracking public-sector real estate data sources, requests, contacts, communications, tasks, and analyst reviews. It is designed for a nonprofit team acquiring California government data such as code violations, tax liens, tax sales, permits, assessments, and related datasets.
+DataTrack is an internal data acquisition CRM for tracking public-sector real estate data sources, agency relationships, requests, communications, tasks, and analyst reviews. It is designed for nonprofit staff and volunteers who need one shared place to manage the work of finding, requesting, receiving, and reviewing California government datasets such as code violations, tax liens, tax sales, permits, assessments, and related real estate data.
 
-The current version is a browser-based React prototype packaged as a single HTML file. It can be opened locally for demos and testing, and it has early Supabase hooks for authentication and persistence.
+The current version is a browser-based React app packaged as static HTML. It is live on GitHub Pages, uses Supabase for authentication and data, and can also be run locally for testing.
 
-## What The App Does
+## Live App
 
-DataTrack helps a data acquisition team manage:
+Open the current deployed app here:
 
-- Agencies: cities, counties, and special districts that own data sources
-- Contacts: agency staff, departments, emails, phone numbers, and notes
-- Datasets: target data sources, acquisition method, status, cost, refresh cadence, and feasibility
-- Communications: emails, calls, CPRA/FOIA interactions, outcomes, and follow-up dates
-- Requests: CPRA, API access, direct purchase, and manual request workflows
-- Tasks: follow-ups, data reviews, clarifications, assignments, due dates, snoozing, and completion
-- Data reviews: analyst feedback on received files using preset issue tags and custom notes
-- Settings: users, roles, email templates, and system defaults
+```text
+https://serve-foundation.github.io/DataTrack/
+```
+
+## What Internal Users Can Do
+
+DataTrack supports the main day-to-day workflows for a data acquisition team:
+
+- View a dashboard of agencies, datasets, requests, communications, tasks, and recent activity.
+- Track agencies that own or publish target data, including city, county, and special district records.
+- Store agency contacts with departments, titles, email addresses, phone numbers, and relationship notes.
+- Track datasets by category, acquisition status, delivery format, refresh frequency, cost, automation feasibility, and source URLs.
+- Log communications with agencies, including emails, calls, CPRA/FOIA messages, portal interactions, outcomes, follow-up dates, and linked records.
+- Manage public records requests, API access requests, direct purchase requests, and manual data requests from draft through closure.
+- Assign and track tasks for follow-ups, data reviews, clarifications, requested files, blocked items, and general acquisition work.
+- Snooze tasks, complete tasks, and keep task note history so handoffs are easier.
+- Review received data files using analyst feedback presets and custom notes.
+- Add notes to agencies, contacts, requests, and tasks to preserve context over time.
+- Use settings for team users, roles, email templates, and system defaults.
+
+## Features Added
+
+- Live GitHub Pages deployment with a clean root URL.
+- Dashboard with clickable metrics, role-based views, pipeline summaries, overdue task alerts, and recent activity.
+- Agency directory with search, filters, sorting, pagination, detail tabs, linked contacts, linked datasets, communications, and notes.
+- Contact directory and contact detail pages with agency links, communication history, notes, and multi-value emails and phone numbers.
+- Dataset tracking with acquisition status, method, category, format, refresh cadence, cost, portal/API fields, and analyst review panels.
+- Communication logging for email, phone, FOIA/CPRA, and portal interactions, including direction, outcome, follow-up date, templates, linked records, and edit history.
+- Request tracking for CPRA, FOIA, API access, direct purchase, and manual data requests with statuses, assignees, contacts, costs, references, notes, and communication threads.
+- Task management with assignees, priorities, due dates, linked records, note history, assignment history, complete action, snooze options, and follow-up task creation.
+- Analyst data review workflow with preset feedback tags, review statuses, custom notes, and file-level review history.
+- Record creation and editing flows for agencies, contacts, datasets, requests, communications, tasks, and reviews.
+- Password sign-in screen and forgot-password reset flow connected to Supabase Auth.
+- Admin settings area for users, roles, email templates, and system configuration.
+
+## Main App Areas
+
+| Area | What it is used for |
+| --- | --- |
+| Dashboard | Team overview, pipeline status, overdue work, and quick navigation. |
+| Agencies | Source agencies, jurisdiction details, linked contacts, datasets, communications, and notes. |
+| Contacts | People inside agencies, including contact methods and communication history. |
+| Datasets | Target datasets, acquisition status, methods, formats, cost, cadence, and analyst review. |
+| Communications | Logged interactions with agencies and contacts, including follow-up tracking. |
+| Requests | Formal and informal data request workflow tracking. |
+| Tasks | Shared work queue for follow-ups, reviews, clarifications, and assignments. |
+| Settings | User roles, templates, and system-level configuration. |
 
 ## Current App Files
 
@@ -78,15 +117,16 @@ http://localhost:5174/
 
 If the app shows that the Supabase project URL is not resolving, replace the hardcoded Supabase URL/key with the values from **Supabase Project Settings > API**.
 
-## Data And Persistence
+## Data And Backend
 
-This prototype still includes local in-memory seed data so the UI can be demoed immediately. It also contains Supabase-backed read/write helpers for several records.
+DataTrack uses Supabase for authentication and backend data.
 
-Important current behavior:
+Important backend behavior:
 
-- If Supabase is configured and reachable, the app attempts to load data from Supabase tables.
-- If Supabase is missing, unreachable, or not fully seeded, the prototype may not persist changes as expected.
-- The full intended schema is documented in `DataTrack_Acquire_Handoff.md`.
+- The app signs users in through Supabase Auth.
+- App records are loaded from Supabase tables when the configured project is reachable.
+- Create, edit, and delete actions are wired through Supabase-backed helpers for the supported records.
+- The database schema is documented in `DataTrack_Acquire_Handoff.md`.
 
 ## Development Notes
 
@@ -95,7 +135,7 @@ The app currently has no package manager, build system, or local framework serve
 Recommended workflow:
 
 1. Edit `DataTrack_v11plus.jsx` for source changes.
-2. Keep `DataTrack_v11plus.html` updated if the browser prototype needs to reflect those changes immediately.
+2. Keep `DataTrack_v11plus.html` and `index.html` updated if the deployed app needs to reflect those changes immediately.
 3. Use the local HTTP server for manual testing.
 4. Commit and push changes to GitHub after verifying the app still loads.
 
@@ -108,14 +148,3 @@ https://github.com/Serve-Foundation/DataTrack.git
 ```
 
 Local `main` has been reconciled with `origin/main`. Normal changes can be committed and pushed from this folder.
-
-## Roadmap
-
-Near-term priorities:
-
-- Replace remaining in-memory writes with Supabase persistence.
-- Move Supabase URL and anon key out of hardcoded source and into deployment environment configuration.
-- Add a proper build setup or lightweight app structure.
-- Deploy the app to a stable hosted URL.
-- Add stronger error handling around auth, data loading, and saves.
-- Add tests once the app is moved into a standard build environment.
