@@ -3262,30 +3262,90 @@ function AdminSettings() {
 
 
 function LoginScreen({ onSignedIn }) {
+  const [mode, setMode] = useState("signin");
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [signupRole, setSignupRole] = useState("viewer");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
+  const isSignup = mode === "signup";
 
   const submit = async (e) => {
     e.preventDefault();
     setError("");
     setNotice("");
+    const trimmedEmail = email.trim();
+    const trimmedName = fullName.trim();
+    if (isSignup) {
+      if (!trimmedName) {
+        setError("Enter your full name.");
+        return;
+      }
+      if (!trimmedEmail) {
+        setError("Enter your email address.");
+        return;
+      }
+      if (password.length < 8) {
+        setError("Password must be at least 8 characters.");
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError("Passwords do not match.");
+        return;
+      }
+    }
     setLoading(true);
     try {
-      const { data, error } = await sb.auth.signInWithPassword({ email, password });
+      if (isSignup) {
+        const { data, error } = await sb.auth.signUp({
+          email: trimmedEmail,
+          password,
+          options: {
+            emailRedirectTo: window.location.href.split("#")[0],
+            data: {
+              full_name: trimmedName,
+              display_name: trimmedName,
+              role: signupRole
+            }
+          }
+        });
+        if (error) {
+          setError(formatAuthError(error, "create your account"));
+          return;
+        }
+        if (data.session) {
+          onSignedIn(data.session);
+          return;
+        }
+        setNotice("Account created. Check your email to confirm your account, then sign in.");
+        setPassword("");
+        setConfirmPassword("");
+        setMode("signin");
+        return;
+      }
+      const { data, error } = await sb.auth.signInWithPassword({ email: trimmedEmail, password });
       if (error) {
         setError(formatAuthError(error, "sign in"));
         return;
       }
       onSignedIn(data.session);
     } catch (err) {
-      setError(formatAuthError(err, "sign in"));
+      setError(formatAuthError(err, isSignup ? "create your account" : "sign in"));
     } finally {
       setLoading(false);
     }
+  };
+
+  const switchMode = (nextMode) => {
+    setMode(nextMode);
+    setError("");
+    setNotice("");
+    setPassword("");
+    setConfirmPassword("");
   };
 
   const sendPasswordReset = async () => {
@@ -3321,24 +3381,55 @@ function LoginScreen({ onSignedIn }) {
           <div style={{ width: 38, height: 38, borderRadius: 9, background: "linear-gradient(135deg, #14B8A6, #0D9488)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800 }}>DT</div>
           <div>
             <div style={{ fontSize: 19, fontWeight: 800, color: "#171717" }}>DataTrack</div>
-            <div style={{ fontSize: 11, color: "#0F766E", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Sign in</div>
+            <div style={{ fontSize: 11, color: "#0F766E", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>{isSignup ? "Create account" : "Sign in"}</div>
           </div>
         </div>
+        {isSignup && (
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: "block", fontSize: 11, color: "#6B7280", fontWeight: 700, textTransform: "uppercase", marginBottom: 5 }}>Full name</label>
+            <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} autoComplete="name" required={isSignup} style={inputS} />
+          </div>
+        )}
         <div style={{ marginBottom: 12 }}>
           <label style={{ display: "block", fontSize: 11, color: "#6B7280", fontWeight: 700, textTransform: "uppercase", marginBottom: 5 }}>Email</label>
           <input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" required style={inputS} />
         </div>
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: isSignup ? 12 : 16 }}>
           <label style={{ display: "block", fontSize: 11, color: "#6B7280", fontWeight: 700, textTransform: "uppercase", marginBottom: 5 }}>Password</label>
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" required style={inputS} />
-          <button type="button" onClick={sendPasswordReset} disabled={resetLoading || loading} style={{ marginTop: 8, padding: 0, border: "none", background: "transparent", color: "#0F766E", fontSize: 12, fontWeight: 700, cursor: resetLoading || loading ? "default" : "pointer", fontFamily: F }}>
-            {resetLoading ? "Sending reset email..." : "Forgot password?"}
-          </button>
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={isSignup ? "new-password" : "current-password"} required style={inputS} />
+          {!isSignup && (
+            <button type="button" onClick={sendPasswordReset} disabled={resetLoading || loading} style={{ marginTop: 8, padding: 0, border: "none", background: "transparent", color: "#0F766E", fontSize: 12, fontWeight: 700, cursor: resetLoading || loading ? "default" : "pointer", fontFamily: F }}>
+              {resetLoading ? "Sending reset email..." : "Forgot password?"}
+            </button>
+          )}
         </div>
+        {isSignup && (
+          <>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", fontSize: 11, color: "#6B7280", fontWeight: 700, textTransform: "uppercase", marginBottom: 5 }}>Confirm password</label>
+              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} autoComplete="new-password" required={isSignup} style={inputS} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", fontSize: 11, color: "#6B7280", fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>Role</label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                {Object.entries(ROLE_CONFIG).map(([role, cfg]) => (
+                  <button key={role} type="button" onClick={() => setSignupRole(role)}
+                    style={{ padding: "8px", borderRadius: 6, border: signupRole === role ? `2px solid ${cfg.color}` : "1px solid #E8E4DF", backgroundColor: signupRole === role ? cfg.bg : "#fff", color: cfg.color, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: F }}>
+                    {cfg.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
         {error && <div style={{ marginBottom: 14, padding: "9px 10px", borderRadius: 6, backgroundColor: "#FEF2F2", border: "1px solid #FCA5A5", color: "#DC2626", fontSize: 12 }}>{error}</div>}
         {notice && <div style={{ marginBottom: 14, padding: "9px 10px", borderRadius: 6, backgroundColor: "#F0FDFA", border: "1px solid #5EEAD4", color: "#0F766E", fontSize: 12 }}>{notice}</div>}
         <button type="submit" disabled={loading} style={{ width: "100%", padding: "10px 14px", border: "none", borderRadius: 6, backgroundColor: loading ? "#99F6E4" : "#0F766E", color: "#fff", fontSize: 14, fontWeight: 700, cursor: loading ? "default" : "pointer", fontFamily: F }}>
-          {loading ? "Signing in..." : "Sign in"}
+          {loading ? (isSignup ? "Creating account..." : "Signing in...") : (isSignup ? "Create account" : "Sign in")}
+        </button>
+        <button type="button" onClick={() => switchMode(isSignup ? "signin" : "signup")} disabled={loading || resetLoading}
+          style={{ width: "100%", marginTop: 12, padding: "8px 14px", border: "1px solid #99F6E4", borderRadius: 6, backgroundColor: "#F0FDFA", color: "#0F766E", fontSize: 13, fontWeight: 700, cursor: loading || resetLoading ? "default" : "pointer", fontFamily: F }}>
+          {isSignup ? "Already have an account? Sign in" : "Create an account"}
         </button>
       </form>
     </div>

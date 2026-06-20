@@ -92,9 +92,13 @@ If port `5174` is already in use, choose another port:
 python3 -m http.server 5175
 ```
 
-## Authentication And Password Reset
+## Authentication And Account Access
 
-The app includes a sign-in screen and a `Forgot password?` flow using Supabase Auth.
+The app includes a sign-in screen, a `Forgot password?` flow, password reset handling, and a simple `Create account` gateway using Supabase Auth.
+
+When a user creates an account, they enter their full name, email, password, and requested app role. The app sends those details to Supabase Auth as user metadata. After the user confirms their email and signs in, DataTrack uses the existing Supabase session flow to load the app.
+
+To make new signups appear in **Settings -> Users & Roles**, run `simple-create-account-gateway.sql` in the Supabase SQL Editor. The SQL creates a trigger on `auth.users` that inserts or updates the matching row in `public.users`, keeps the new user active, stores the selected role, and falls back to `viewer` if the role is missing or invalid.
 
 For authentication to work, the constants at the top of the app must point to a valid Supabase project:
 
