@@ -64,6 +64,8 @@ DataTrack supports the main day-to-day workflows for a data acquisition team:
 | `DataTrack_v11plus.html` | Runnable app. Open this in a browser or serve it locally. |
 | `DataTrack_v11plus.jsx` | Main JSX source for the app. |
 | `DataTrack_v11plus_dev.jsx` | ES module development version. |
+| `USER_MANUAL.md` | Plain-language guide for everyday DataTrack users and stakeholders. |
+| `TROUBLESHOOTING_MANUAL.md` | Common troubleshooting steps for users, admins, and developers. |
 | `DataTrack_Acquire_Handoff.md` | Detailed technical handoff, schema, features, and version history. |
 | `Supabase_integration_plan.md` | Step-by-step Supabase integration plan. |
 | `DataTrack_Build_Plan.md` | Build plan, timeline, roles, and infrastructure notes. |
@@ -118,6 +120,14 @@ In Supabase, also add the local app URL to Auth redirect URLs:
 ```text
 http://localhost:5174/
 ```
+
+Also set the deployed app as an allowed Auth redirect URL, and preferably as the Site URL:
+
+```text
+https://serve-foundation.github.io/DataTrack/
+```
+
+Password reset and signup confirmation emails use this deployed URL. If Supabase is still configured with `http://localhost:3000` as the Site URL and the deployed URL is not allow-listed, reset links may open a dead localhost page.
 
 If the app shows that the Supabase project URL is not resolving, replace the hardcoded Supabase URL/key with the values from **Supabase Project Settings > API**.
 

@@ -23,6 +23,7 @@
 const { useState, useMemo, useEffect } = React;
 const SUPABASE_URL = "https://fusfagflbqxmzftfwddd.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1c2ZhZ2ZsYnF4bXpmdGZ3ZGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4Nzk0MDQsImV4cCI6MjA5NDQ1NTQwNH0.TL5ix8s0Ehj1idPraFagYi0ABrsQ_tSSmP3pEeXNZcQ";
+const APP_BASE_URL = "https://serve-foundation.github.io/DataTrack/";
 const isSupabaseConfigured = SUPABASE_URL.startsWith("https://") && !SUPABASE_ANON_KEY.startsWith("PASTE_");
 const sb = isSupabaseConfigured && typeof supabase !== "undefined" ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const formatAuthError = (err, action) => {
@@ -2135,7 +2136,7 @@ function LoginScreen({ onSignedIn }) {
           email: trimmedEmail,
           password,
           options: {
-            emailRedirectTo: window.location.href.split("#")[0],
+            emailRedirectTo: APP_BASE_URL,
             data: {
               full_name: trimmedName,
               display_name: trimmedName,
@@ -2186,7 +2187,7 @@ function LoginScreen({ onSignedIn }) {
     }
     setResetLoading(true);
     try {
-      const resetOptions = window.location.protocol.startsWith("http") ? { redirectTo: window.location.href.split("#")[0] } : {};
+      const resetOptions = { redirectTo: APP_BASE_URL };
       const { error: error2 } = await sb.auth.resetPasswordForEmail(trimmedEmail, resetOptions);
       if (error2) {
         setError(formatAuthError(error2, "send a password reset email"));
