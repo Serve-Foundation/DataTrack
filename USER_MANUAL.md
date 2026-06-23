@@ -158,6 +158,12 @@ Use task statuses consistently:
 
 Use reviews to explain whether the dataset is usable and what must be fixed before it can be used.
 
+### Upload Files
+
+All upload buttons in DataTrack are active and can be used when a workflow asks for a file. Use upload buttons to attach the relevant source file, received dataset, supporting document, or review material to the record you are working on.
+
+Before uploading, use a clear file name that identifies the agency, dataset, and date when possible.
+
 ### Add Notes
 
 Use notes to preserve context that does not fit cleanly in a form field.
@@ -194,5 +200,5 @@ Avoid vague notes like `follow up later`. Write the next action and date when po
 | Track a CPRA/FOIA/API request | Requests |
 | Assign follow-up work | Tasks |
 | Review data quality | Dataset detail -> Data Reviews |
+| Upload a file | Use the upload button on the relevant record |
 | Manage users or roles | Settings |
-
