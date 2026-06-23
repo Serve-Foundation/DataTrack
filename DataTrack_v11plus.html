@@ -188,7 +188,7 @@ function ContactDetail({ contactId, onBack, onNav, onAgency, onEditRecord, onOpe
 const SYSTEM_USERS = [];
 const EMAIL_TEMPLATES = [];
 const SYSTEM_SETTINGS = {
-  shared_email: "data@data.org",
+  shared_email: "",
   org_name: "DataTrack",
   default_followup_email: 5,
   default_followup_phone: 3,
@@ -339,6 +339,23 @@ const NAV_ITEMS = [
   { id: "requests", icon: "mail", label: "Requests" },
   { id: "tasks", icon: "clock", label: "Tasks" }
 ];
+const VALID_PAGES = new Set([...NAV_ITEMS.map((item) => item.id), "settings"]);
+const PAGE_STORAGE_KEY = "datatrack_active_page";
+function getInitialPage() {
+  try {
+    const savedPage = window.localStorage.getItem(PAGE_STORAGE_KEY);
+    return VALID_PAGES.has(savedPage) ? savedPage : "dashboard";
+  } catch {
+    return "dashboard";
+  }
+}
+function persistPage(pageId) {
+  if (!VALID_PAGES.has(pageId)) return;
+  try {
+    window.localStorage.setItem(PAGE_STORAGE_KEY, pageId);
+  } catch {
+  }
+}
 function Sidebar({ active, onNav, onAgency, currentUser, onSignOut }) {
   const displayName = currentUser?.user_metadata?.full_name || currentUser?.email || "User";
   const initials = displayName.split(/\s|@/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "U";
@@ -902,7 +919,7 @@ const OUTCOME_OPTIONS = [
   { value: "referred", label: "Referred to another contact" },
   { value: "rejected", label: "Request denied / rejected" }
 ];
-function CommForm({ onClose, prefillAgency, prefillDataset }) {
+function CommForm({ onClose, prefillAgency, prefillDataset, currentUser }) {
   const [agencyId, setAgencyId] = useState(prefillAgency || "");
   const [datasetId, setDatasetId] = useState(prefillDataset || "");
   const [contactId, setContactId] = useState("");
@@ -918,6 +935,7 @@ function CommForm({ onClose, prefillAgency, prefillDataset }) {
   const agencyDatasets = useMemo(() => agencyId ? DATASETS.filter((d) => d.agency_id === agencyId) : [], [agencyId]);
   const agencyContacts = useMemo(() => agencyId ? CONTACTS.filter((c) => c.agency_id === agencyId) : [], [agencyId]);
   const agencyRequests = useMemo(() => agencyId ? REQUESTS.filter((r) => r.agency_id === agencyId && !["closed", "rejected"].includes(r.status)) : [], [agencyId]);
+  const loggedBy = currentUser?.user_metadata?.full_name || currentUser?.user_metadata?.display_name || currentUser?.email || "User";
   const setChannelWithDefault = (ch) => {
     setChannel(ch);
     const days = CHANNEL_DEFAULTS[ch] || 5;
@@ -942,7 +960,7 @@ function CommForm({ onClose, prefillAgency, prefillDataset }) {
         direction,
         subject,
         body,
-        user_name: "Sarah Chen",
+        user_name: loggedBy,
         outcome,
         follow_up_date: followUpDate,
         follow_up_status: followUpDate ? "open" : "",
@@ -977,13 +995,13 @@ function CommForm({ onClose, prefillAgency, prefillDataset }) {
       style: { flex: 1, padding: "7px 8px", border: direction === val ? "2px solid #0F766E" : "1px solid #E8E4DF", borderRadius: 6, backgroundColor: direction === val ? "#F0FDFA" : "#fff", color: direction === val ? "#0F766E" : "#6B7280", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }
     },
     lbl
-  ))))), channel === "email" || channel === "foia" ? /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 16 } }, /* @__PURE__ */ React.createElement("label", { style: labelStyle }, "Email Template ", /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#9CA3A0" } }, "(optional)")), /* @__PURE__ */ React.createElement("select", { onChange: (e) => {
+  ))))), channel === "email" || channel === "foia" ? /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 16 } }, /* @__PURE__ */ React.createElement("label", { style: labelStyle }, "Message Template ", /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#9CA3A0" } }, "(optional)")), /* @__PURE__ */ React.createElement("select", { onChange: (e) => {
     const t = EMAIL_TEMPLATES.find((t2) => t2.id === e.target.value);
     if (t) {
       setSubject(t.subject);
       setBody(t.body);
     }
-  }, style: { ...inputStyle, cursor: "pointer" } }, /* @__PURE__ */ React.createElement("option", { value: "" }, "No template \u2014 start blank"), EMAIL_TEMPLATES.filter((t) => t.channel === channel || t.channel === "email").map((t) => /* @__PURE__ */ React.createElement("option", { key: t.id, value: t.id }, t.name)))) : channel === "phone" ? /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 16 } }, /* @__PURE__ */ React.createElement("label", { style: labelStyle }, "Call Script ", /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#9CA3A0" } }, "(optional)")), /* @__PURE__ */ React.createElement("select", { onChange: (e) => {
+  }, style: { ...inputStyle, cursor: "pointer" } }, /* @__PURE__ */ React.createElement("option", { value: "" }, "No template - start blank"), EMAIL_TEMPLATES.filter((t) => t.channel === channel || t.channel === "email").map((t) => /* @__PURE__ */ React.createElement("option", { key: t.id, value: t.id }, t.name)))) : channel === "phone" ? /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 16 } }, /* @__PURE__ */ React.createElement("label", { style: labelStyle }, "Call Script ", /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#9CA3A0" } }, "(optional)")), /* @__PURE__ */ React.createElement("select", { onChange: (e) => {
     const t = EMAIL_TEMPLATES.find((t2) => t2.id === e.target.value);
     if (t) {
       setBody(t.body);
@@ -996,15 +1014,12 @@ function CommForm({ onClose, prefillAgency, prefillDataset }) {
   }, style: { ...inputStyle, cursor: "pointer" } }, /* @__PURE__ */ React.createElement("option", { value: "" }, "Select an agency..."), AGENCIES.map((a) => /* @__PURE__ */ React.createElement("option", { key: a.id, value: a.id }, a.name, " \u2014 ", a.jurisdiction, " County")))), /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("label", { style: labelStyle }, "Dataset"), /* @__PURE__ */ React.createElement("select", { value: datasetId, onChange: (e) => setDatasetId(e.target.value), disabled: !agencyId, style: { ...inputStyle, cursor: agencyId ? "pointer" : "not-allowed", opacity: agencyId ? 1 : 0.5 } }, /* @__PURE__ */ React.createElement("option", { value: "" }, "None"), agencyDatasets.map((d) => /* @__PURE__ */ React.createElement("option", { key: d.id, value: d.id }, d.name)))), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("label", { style: labelStyle }, "Contact"), /* @__PURE__ */ React.createElement("select", { value: contactId, onChange: (e) => setContactId(e.target.value), disabled: !agencyId, style: { ...inputStyle, cursor: agencyId ? "pointer" : "not-allowed", opacity: agencyId ? 1 : 0.5 } }, /* @__PURE__ */ React.createElement("option", { value: "" }, "None"), agencyContacts.map((c) => /* @__PURE__ */ React.createElement("option", { key: c.id, value: c.id }, c.first_name, " ", c.last_name, " \u2014 ", c.department)))), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("label", { style: labelStyle }, "Request ", /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#9CA3A0" } }, "(link to)")), /* @__PURE__ */ React.createElement("select", { value: requestId, onChange: (e) => setRequestId(e.target.value), disabled: !agencyId, style: { ...inputStyle, cursor: agencyId ? "pointer" : "not-allowed", opacity: agencyId ? 1 : 0.5 } }, /* @__PURE__ */ React.createElement("option", { value: "" }, "None"), agencyRequests.map((r) => {
     const rc = REQ_STATUS_CONFIG[r.status];
     return /* @__PURE__ */ React.createElement("option", { key: r.id, value: r.id }, "[", rc?.label, "] ", r.title);
-  })))), isEmail && /* @__PURE__ */ React.createElement("div", { style: { padding: "12px 14px", backgroundColor: "#FAF9F7", borderRadius: 8, border: "1px solid #E8E4DF", marginBottom: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 12, fontSize: 12, color: "#525252" } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1 } }, /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 600, color: "#9CA3A0" } }, "From: "), /* @__PURE__ */ React.createElement("span", null, "Sarah Chen <data@data.org>")), contactId && (() => {
-    const ct = CONTACTS.find((c) => c.id === contactId);
-    return ct?.email ? /* @__PURE__ */ React.createElement("div", { style: { flex: 1 } }, /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 600, color: "#9CA3A0" } }, "To: "), /* @__PURE__ */ React.createElement("span", null, ct.first_name, " ", ct.last_name, " <", ct.email, ">")) : null;
-  })())), /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 16 } }, /* @__PURE__ */ React.createElement("label", { style: labelStyle }, "Subject *"), /* @__PURE__ */ React.createElement("input", { value: subject, onChange: (e) => setSubject(e.target.value), placeholder: isEmail ? "Email subject line..." : "Brief description of the interaction...", style: inputStyle })), /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 16 } }, /* @__PURE__ */ React.createElement("label", { style: labelStyle }, isEmail ? "Email Body" : channel === "phone" ? "Call Notes" : "Details", " *"), /* @__PURE__ */ React.createElement(
+  })))), /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 16 } }, /* @__PURE__ */ React.createElement("label", { style: labelStyle }, "Subject *"), /* @__PURE__ */ React.createElement("input", { value: subject, onChange: (e) => setSubject(e.target.value), placeholder: isEmail ? "Subject from the email or message..." : "Brief description of the interaction...", style: inputStyle })), /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 16 } }, /* @__PURE__ */ React.createElement("label", { style: labelStyle }, isEmail ? "Email Summary Or Text" : channel === "phone" ? "Call Notes" : "Details", " *"), /* @__PURE__ */ React.createElement(
     "textarea",
     {
       value: body,
       onChange: (e) => setBody(e.target.value),
-      placeholder: isEmail ? "Compose your email..." : "Describe the interaction, key takeaways, next steps...",
+      placeholder: isEmail ? "Paste or summarize the email that was sent or received..." : "Describe the interaction, key takeaways, next steps...",
       rows: 5,
       style: { ...inputStyle, resize: "vertical", lineHeight: 1.6 }
     }
@@ -1028,24 +1043,15 @@ function CommForm({ onClose, prefillAgency, prefillDataset }) {
       },
       label
     );
-  }))))), /* @__PURE__ */ React.createElement("div", { style: { padding: "16px 24px", borderTop: "1px solid #E8E4DF", display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "#FAF9F7", borderRadius: "0 0 12px 12px" } }, /* @__PURE__ */ React.createElement("button", { onClick: onClose, style: { padding: "8px 16px", border: "1px solid #E8E4DF", borderRadius: 6, backgroundColor: "#fff", color: "#525252", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: F } }, "Cancel"), saveError && /* @__PURE__ */ React.createElement("div", { style: { flex: 1, margin: "0 12px", fontSize: 12, color: "#DC2626", alignSelf: "center", fontFamily: F } }, saveError), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8 } }, isEmail && direction === "outbound" && /* @__PURE__ */ React.createElement(
-    "button",
-    {
-      onClick: handleSave,
-      disabled: !canSave,
-      style: { padding: "8px 20px", border: "none", borderRadius: 6, backgroundColor: canSave ? "#059669" : "#D1CDC8", color: "#fff", fontSize: 13, fontWeight: 600, cursor: canSave ? "pointer" : "not-allowed", fontFamily: F, display: "flex", alignItems: "center", gap: 6 }
-    },
-    "\u2709",
-    " Send & Log"
-  ), /* @__PURE__ */ React.createElement(
+  }))))), /* @__PURE__ */ React.createElement("div", { style: { padding: "16px 24px", borderTop: "1px solid #E8E4DF", display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "#FAF9F7", borderRadius: "0 0 12px 12px" } }, /* @__PURE__ */ React.createElement("button", { onClick: onClose, style: { padding: "8px 16px", border: "1px solid #E8E4DF", borderRadius: 6, backgroundColor: "#fff", color: "#525252", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: F } }, "Cancel"), saveError && /* @__PURE__ */ React.createElement("div", { style: { flex: 1, margin: "0 12px", fontSize: 12, color: "#DC2626", alignSelf: "center", fontFamily: F } }, saveError), /* @__PURE__ */ React.createElement(
     "button",
     {
       onClick: handleSave,
       disabled: !canSave,
       style: { padding: "8px 20px", border: "none", borderRadius: 6, backgroundColor: canSave ? "#0F766E" : "#D1CDC8", color: "#fff", fontSize: 13, fontWeight: 600, cursor: canSave ? "pointer" : "not-allowed", fontFamily: F }
     },
-    isEmail && direction === "outbound" ? "Log Only" : "Save Communication"
-  )))));
+    "Save Communication"
+  ))));
 }
 function CommDetail({ comm, onClose }) {
   const [editing, setEditing] = useState(false);
@@ -1919,7 +1925,7 @@ function AdminSettings() {
   };
   const tabs = [
     { id: "users", label: "Users & Roles", count: SYSTEM_USERS.length },
-    { id: "templates", label: "Email Templates", count: EMAIL_TEMPLATES.length },
+    { id: "templates", label: "Message Templates", count: EMAIL_TEMPLATES.length },
     { id: "system", label: "System Settings", count: null }
   ];
   return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", { style: { fontSize: 22, fontWeight: 700, color: "#171717", margin: "0 0 4px", fontFamily: F } }, "Admin Settings"), /* @__PURE__ */ React.createElement("p", { style: { fontSize: 13, color: "#6B7280", margin: "0 0 24px" } }, "Manage users, templates, and system configuration"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 0, borderBottom: "2px solid #E8E4DF", marginBottom: 20 } }, tabs.map((t) => /* @__PURE__ */ React.createElement(
@@ -1959,7 +1965,7 @@ function AdminSettings() {
   })))), /* @__PURE__ */ React.createElement("div", { style: { marginTop: 20, padding: "16px 20px", backgroundColor: "#fff", borderRadius: 8, border: "1px solid #E8E4DF" } }, /* @__PURE__ */ React.createElement("h3", { style: { fontSize: 13, fontWeight: 700, color: "#171717", margin: "0 0 12px", fontFamily: F } }, "Role Permissions"), /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } }, Object.entries(ROLE_CONFIG).map(([role, cfg]) => /* @__PURE__ */ React.createElement("div", { key: role, style: { padding: "10px 14px", borderRadius: 6, backgroundColor: "#FAF9F7", border: "1px solid #E8E4DF" } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 4 } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, padding: "2px 8px", borderRadius: 4, fontWeight: 600, backgroundColor: cfg.bg, color: cfg.color } }, cfg.label)), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: "#6B7280", lineHeight: 1.5 } }, cfg.desc)))))), tab === "users" && editingUser && /* @__PURE__ */ React.createElement("div", { style: { backgroundColor: "#fff", borderRadius: 8, border: "1px solid #E8E4DF", padding: "24px", maxWidth: 560 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 } }, /* @__PURE__ */ React.createElement("h3", { style: { fontSize: 16, fontWeight: 700, color: "#171717", margin: 0, fontFamily: F } }, editingUser.id === "new" ? "Add New User" : `Edit: ${editingUser.full_name}`), /* @__PURE__ */ React.createElement("button", { onClick: () => setEditingUser(null), style: { fontSize: 12, color: "#0D9488", background: "none", border: "none", cursor: "pointer", fontWeight: 600, fontFamily: F } }, "\u2190", " Back to list")), [
     { key: "full_name", label: "Full Name", placeholder: "Jane Doe" },
     { key: "email", label: "Email", placeholder: "jane@data.org" },
-    { key: "display_name", label: "Display Name (for outbound email)", placeholder: "Jane Doe" }
+    { key: "display_name", label: "Display Name", placeholder: "Jane Doe" }
   ].map((field) => /* @__PURE__ */ React.createElement("div", { key: field.key, style: { marginBottom: 16 } }, /* @__PURE__ */ React.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4, fontFamily: F } }, field.label), /* @__PURE__ */ React.createElement(
     "input",
     {
@@ -2041,7 +2047,7 @@ function AdminSettings() {
       placeholder: "e.g., CPRA Request \u2014 {dataset}",
       style: { width: "100%", padding: "8px 12px", border: "1px solid #E8E4DF", borderRadius: 6, fontSize: 13, color: "#262626", fontFamily: F, boxSizing: "border-box", outline: "none" }
     }
-  )), /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 20 } }, /* @__PURE__ */ React.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4, fontFamily: F } }, editingTemplate.channel === "phone" ? "Call Script" : "Email Body"), /* @__PURE__ */ React.createElement(
+  )), /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 20 } }, /* @__PURE__ */ React.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4, fontFamily: F } }, editingTemplate.channel === "phone" ? "Call Script" : "Message Body"), /* @__PURE__ */ React.createElement(
     "textarea",
     {
       value: editingTemplate.body,
@@ -2063,14 +2069,14 @@ function AdminSettings() {
       style: { padding: "8px 20px", border: "none", borderRadius: 6, backgroundColor: "#0F766E", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }
     },
     editingTemplate.id === "new" ? "Create Template" : "Save Template"
-  ))), tab === "system" && /* @__PURE__ */ React.createElement("div", { style: { maxWidth: 560 } }, /* @__PURE__ */ React.createElement("div", { style: { backgroundColor: "#fff", borderRadius: 8, border: "1px solid #E8E4DF", padding: "20px 24px", marginBottom: 16 } }, /* @__PURE__ */ React.createElement("h3", { style: { fontSize: 14, fontWeight: 700, color: "#171717", margin: "0 0 16px", fontFamily: F } }, "Email Configuration"), /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 16 } }, /* @__PURE__ */ React.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4, fontFamily: F } }, "Shared Outbound Email"), /* @__PURE__ */ React.createElement(
+  ))), tab === "system" && /* @__PURE__ */ React.createElement("div", { style: { maxWidth: 560 } }, /* @__PURE__ */ React.createElement("div", { style: { backgroundColor: "#fff", borderRadius: 8, border: "1px solid #E8E4DF", padding: "20px 24px", marginBottom: 16 } }, /* @__PURE__ */ React.createElement("h3", { style: { fontSize: 14, fontWeight: 700, color: "#171717", margin: "0 0 16px", fontFamily: F } }, "Communication Logging"), /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 16 } }, /* @__PURE__ */ React.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4, fontFamily: F } }, "Shared Email Reference"), /* @__PURE__ */ React.createElement(
     "input",
     {
       value: localSettings.shared_email,
       onChange: (e) => setLocalSettings({ ...localSettings, shared_email: e.target.value }),
       style: { width: "100%", padding: "8px 12px", border: "1px solid #E8E4DF", borderRadius: 6, fontSize: 13, color: "#262626", fontFamily: F, boxSizing: "border-box", outline: "none" }
     }
-  ), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: "#9CA3A0", marginTop: 3 } }, "All outbound emails are sent from this address with individual display names.")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4, fontFamily: F } }, "Organization Name"), /* @__PURE__ */ React.createElement(
+  ), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: "#9CA3A0", marginTop: 3 } }, "Optional reference address for logged communications. DataTrack records messages; it does not send them.")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4, fontFamily: F } }, "Organization Name"), /* @__PURE__ */ React.createElement(
     "input",
     {
       value: localSettings.org_name,
@@ -2242,7 +2248,7 @@ function PasswordResetScreen({ onDone }) {
   return React.createElement("div", { style: { minHeight: "100vh", backgroundColor: "#F8F6F3", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F, padding: 24 } }, React.createElement("form", { onSubmit: submit, style: { width: "100%", maxWidth: 380, backgroundColor: "#fff", border: "1px solid #E8E4DF", borderRadius: 10, padding: 28, boxShadow: "0 18px 40px rgba(26,26,46,0.08)" } }, React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 22 } }, React.createElement("div", { style: { width: 38, height: 38, borderRadius: 9, background: "linear-gradient(135deg, #14B8A6, #0D9488)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800 } }, "DT"), React.createElement("div", null, React.createElement("div", { style: { fontSize: 19, fontWeight: 800, color: "#171717" } }, "DataTrack"), React.createElement("div", { style: { fontSize: 11, color: "#0F766E", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" } }, "Reset password"))), React.createElement("div", { style: { marginBottom: 12 } }, React.createElement("label", { style: { display: "block", fontSize: 11, color: "#6B7280", fontWeight: 700, textTransform: "uppercase", marginBottom: 5 } }, "New password"), React.createElement("input", { type: "password", value: password, onChange: (e) => setPassword(e.target.value), autoComplete: "new-password", required: true, style: inputS })), React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("label", { style: { display: "block", fontSize: 11, color: "#6B7280", fontWeight: 700, textTransform: "uppercase", marginBottom: 5 } }, "Confirm password"), React.createElement("input", { type: "password", value: confirmPassword, onChange: (e) => setConfirmPassword(e.target.value), autoComplete: "new-password", required: true, style: inputS })), error && React.createElement("div", { style: { marginBottom: 14, padding: "9px 10px", borderRadius: 6, backgroundColor: "#FEF2F2", border: "1px solid #FCA5A5", color: "#DC2626", fontSize: 12 } }, error), notice && React.createElement("div", { style: { marginBottom: 14, padding: "9px 10px", borderRadius: 6, backgroundColor: "#F0FDFA", border: "1px solid #5EEAD4", color: "#0F766E", fontSize: 12 } }, notice), React.createElement("button", { type: "submit", disabled: loading, style: { width: "100%", padding: "10px 14px", border: "none", borderRadius: 6, backgroundColor: loading ? "#99F6E4" : "#0F766E", color: "#fff", fontSize: 14, fontWeight: 700, cursor: loading ? "default" : "pointer", fontFamily: F } }, loading ? "Updating..." : "Update password")));
 }
 function App() {
-  const [page, setPage] = useState("dashboard");
+  const [page, setPage] = useState(getInitialPage);
   const [selAgency, setSelAgency] = useState(null);
   const [selContact, setSelContact] = useState(null);
   const [showCommForm, setShowCommForm] = useState(false);
@@ -2292,11 +2298,15 @@ function App() {
     if (sb) await sb.auth.signOut();
     setSession(null);
   };
+  const setActivePage = (pg) => {
+    persistPage(pg);
+    setPage(pg);
+  };
   const navTo = (pg, filter) => {
     setSelAgency(null);
     setSelContact(null);
     setPageFilter(filter || {});
-    setPage(pg);
+    setActivePage(pg);
   };
   const openCommForm = (agencyId, datasetId) => {
     setCommFormPrefill({ agencyId: agencyId || "", datasetId: datasetId || "" });
@@ -2320,7 +2330,7 @@ This agency has ${linkedContacts} contact(s) and ${linkedDatasets} dataset(s). S
   const renderPage = () => {
     if (page === "agencies" && selAgency) return /* @__PURE__ */ React.createElement(AgencyDetail, { key: saveKey, agencyId: selAgency, onBack: () => setSelAgency(null), onOpenForm: openCommForm, onDelete: deleteAgency, onEditRecord: setRecordForm, onViewContact: (cid) => {
       setSelContact(cid);
-      setPage("contacts");
+      setActivePage("contacts");
     } });
     switch (page) {
       case "dashboard":
@@ -2337,12 +2347,12 @@ This agency has ${linkedContacts} contact(s) and ${linkedDatasets} dataset(s). S
       case "requests":
         return /* @__PURE__ */ React.createElement(RequestList, { key: saveKey, onNav: navTo, onAgency: setSelAgency, initFilter: pageFilter, onEditRecord: setRecordForm, onViewContact: (cid) => {
           setSelContact(cid);
-          setPage("contacts");
+          setActivePage("contacts");
         } });
       case "tasks":
         return /* @__PURE__ */ React.createElement(TaskList, { key: saveKey, onNav: navTo, onAgency: setSelAgency, initFilter: pageFilter, onViewContact: (cid) => {
           setSelContact(cid);
-          setPage("contacts");
+          setActivePage("contacts");
         } });
       case "settings":
         return /* @__PURE__ */ React.createElement(AdminSettings, { key: saveKey });
@@ -2350,18 +2360,13 @@ This agency has ${linkedContacts} contact(s) and ${linkedDatasets} dataset(s). S
         return null;
     }
   };
-  return authLoading ? /* @__PURE__ */ React.createElement("div", { style: { minHeight: "100vh", backgroundColor: "#F8F6F3", display: "flex", alignItems: "center", justifyContent: "center", color: "#0F766E", fontSize: 13, fontWeight: 700, fontFamily: F } }, "Checking session...") : passwordRecovery && session ? /* @__PURE__ */ React.createElement(PasswordResetScreen, { onDone: () => setPasswordRecovery(false) }) : isSupabaseConfigured && !session ? /* @__PURE__ */ React.createElement(LoginScreen, { onSignedIn: setSession }) : /* @__PURE__ */ React.createElement("div", { style: { display: "flex", minHeight: "100vh", backgroundColor: "#F8F6F3", fontFamily: F } }, /* @__PURE__ */ React.createElement("link", { href: "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap", rel: "stylesheet" }), /* @__PURE__ */ React.createElement(Sidebar, { active: page, onNav: (pg) => {
-    setSelAgency(null);
-    setSelContact(null);
-    setPageFilter({});
-    setPage(pg);
-  }, onAgency: setSelAgency, currentUser: session?.user, onSignOut: signOut }), /* @__PURE__ */ React.createElement("main", { style: { marginLeft: SIDEBAR_W, flex: 1, padding: "28px 32px", minHeight: "100vh", maxWidth: 1120 } }, supabaseStatus.loading ? /* @__PURE__ */ React.createElement("div", { style: { padding: "10px 12px", borderRadius: 6, backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", color: "#0F766E", fontSize: 12, fontWeight: 600, fontFamily: F } }, "Loading Supabase data...") : supabaseStatus.error ? /* @__PURE__ */ React.createElement("div", { style: { padding: "10px 12px", borderRadius: 6, backgroundColor: "#FEF2F2", border: "1px solid #FCA5A5", color: "#DC2626", fontSize: 12, fontWeight: 600, fontFamily: F } }, "Supabase load failed: ", supabaseStatus.error) : renderPage()), recordForm && recordForm.type === "task_create" ? /* @__PURE__ */ React.createElement(TaskForm, { task: { task_type: "follow_up", priority: "normal", status: "open", assigned_to: "", assigned_by: "Sarah Chen", title: "", due_date: "", agency_id: "", contact_id: "", dataset_id: "", ...recordForm.record }, onClose: () => {
+  return authLoading ? /* @__PURE__ */ React.createElement("div", { style: { minHeight: "100vh", backgroundColor: "#F8F6F3", display: "flex", alignItems: "center", justifyContent: "center", color: "#0F766E", fontSize: 13, fontWeight: 700, fontFamily: F } }, "Checking session...") : passwordRecovery && session ? /* @__PURE__ */ React.createElement(PasswordResetScreen, { onDone: () => setPasswordRecovery(false) }) : isSupabaseConfigured && !session ? /* @__PURE__ */ React.createElement(LoginScreen, { onSignedIn: setSession }) : /* @__PURE__ */ React.createElement("div", { style: { display: "flex", minHeight: "100vh", backgroundColor: "#F8F6F3", fontFamily: F } }, /* @__PURE__ */ React.createElement("link", { href: "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap", rel: "stylesheet" }), /* @__PURE__ */ React.createElement(Sidebar, { active: page, onNav: navTo, onAgency: setSelAgency, currentUser: session?.user, onSignOut: signOut }), /* @__PURE__ */ React.createElement("main", { style: { marginLeft: SIDEBAR_W, flex: 1, padding: "28px 32px", minHeight: "100vh", maxWidth: 1120 } }, supabaseStatus.loading ? /* @__PURE__ */ React.createElement("div", { style: { padding: "10px 12px", borderRadius: 6, backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", color: "#0F766E", fontSize: 12, fontWeight: 600, fontFamily: F } }, "Loading Supabase data...") : supabaseStatus.error ? /* @__PURE__ */ React.createElement("div", { style: { padding: "10px 12px", borderRadius: 6, backgroundColor: "#FEF2F2", border: "1px solid #FCA5A5", color: "#DC2626", fontSize: 12, fontWeight: 600, fontFamily: F } }, "Supabase load failed: ", supabaseStatus.error) : renderPage()), recordForm && recordForm.type === "task_create" ? /* @__PURE__ */ React.createElement(TaskForm, { task: { task_type: "follow_up", priority: "normal", status: "open", assigned_to: "", assigned_by: "Sarah Chen", title: "", due_date: "", agency_id: "", contact_id: "", dataset_id: "", ...recordForm.record }, onClose: () => {
     setRecordForm(null);
     setSaveKey((k) => k + 1);
   } }) : recordForm ? /* @__PURE__ */ React.createElement(RecordForm, { type: recordForm.type, record: recordForm.record, onClose: () => {
     setRecordForm(null);
     setSaveKey((k) => k + 1);
-  } }) : null, showCommForm && /* @__PURE__ */ React.createElement(CommForm, { onClose: () => setShowCommForm(false), prefillAgency: commFormPrefill.agencyId, prefillDataset: commFormPrefill.datasetId }));
+  } }) : null, showCommForm && /* @__PURE__ */ React.createElement(CommForm, { onClose: () => setShowCommForm(false), prefillAgency: commFormPrefill.agencyId, prefillDataset: commFormPrefill.datasetId, currentUser: session?.user }));
 }
 ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
 

@@ -240,7 +240,7 @@ const SYSTEM_USERS = [];
 const EMAIL_TEMPLATES = [];
 
 const SYSTEM_SETTINGS = {
-  shared_email: "data@data.org",
+  shared_email: "",
   org_name: "DataTrack",
   default_followup_email: 5,
   default_followup_phone: 3,
@@ -386,6 +386,23 @@ const NAV_ITEMS = [
   { id: "requests", icon: "mail", label: "Requests" },
   { id: "tasks", icon: "clock", label: "Tasks" },
 ];
+
+const VALID_PAGES = new Set([...NAV_ITEMS.map(item => item.id), "settings"]);
+const PAGE_STORAGE_KEY = "datatrack_active_page";
+function getInitialPage() {
+  try {
+    const savedPage = window.localStorage.getItem(PAGE_STORAGE_KEY);
+    return VALID_PAGES.has(savedPage) ? savedPage : "dashboard";
+  } catch {
+    return "dashboard";
+  }
+}
+function persistPage(pageId) {
+  if (!VALID_PAGES.has(pageId)) return;
+  try {
+    window.localStorage.setItem(PAGE_STORAGE_KEY, pageId);
+  } catch {}
+}
 
 function Sidebar({ active, onNav, onAgency, currentUser, onSignOut }) {
   const displayName = currentUser?.user_metadata?.full_name || currentUser?.email || "User";
@@ -1288,7 +1305,7 @@ const OUTCOME_OPTIONS = [
   { value: "rejected", label: "Request denied / rejected" },
 ];
 
-function CommForm({ onClose, prefillAgency, prefillDataset }) {
+function CommForm({ onClose, prefillAgency, prefillDataset, currentUser }) {
   const [agencyId, setAgencyId] = useState(prefillAgency || "");
   const [datasetId, setDatasetId] = useState(prefillDataset || "");
   const [contactId, setContactId] = useState("");
@@ -1304,6 +1321,7 @@ function CommForm({ onClose, prefillAgency, prefillDataset }) {
   const agencyDatasets = useMemo(() => agencyId ? DATASETS.filter(d => d.agency_id === agencyId) : [], [agencyId]);
   const agencyContacts = useMemo(() => agencyId ? CONTACTS.filter(c => c.agency_id === agencyId) : [], [agencyId]);
   const agencyRequests = useMemo(() => agencyId ? REQUESTS.filter(r => r.agency_id === agencyId && !["closed","rejected"].includes(r.status)) : [], [agencyId]);
+  const loggedBy = currentUser?.user_metadata?.full_name || currentUser?.user_metadata?.display_name || currentUser?.email || "User";
 
   // Auto-set follow-up default when channel changes
   const setChannelWithDefault = (ch) => {
@@ -1325,7 +1343,7 @@ function CommForm({ onClose, prefillAgency, prefillDataset }) {
     COMMUNICATIONS.push({
       id: "comm_" + Date.now(), agency_id: agencyId, contact_id: contactId, dataset_id: datasetId,
       request_id: requestId, channel, direction, subject, body,
-      user_name: "Sarah Chen", outcome, follow_up_date: followUpDate,
+      user_name: loggedBy, outcome, follow_up_date: followUpDate,
       follow_up_status: followUpDate ? "open" : "", created_at: new Date().toISOString(),
     });
     setSaved(true); setTimeout(() => onClose(), 1200);
@@ -1392,12 +1410,12 @@ function CommForm({ onClose, prefillAgency, prefillDataset }) {
           {/* Template selector */}
           {channel === "email" || channel === "foia" ? (
             <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Email Template <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#9CA3A0" }}>(optional)</span></label>
+              <label style={labelStyle}>Message Template <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#9CA3A0" }}>(optional)</span></label>
               <select onChange={e => {
                 const t = EMAIL_TEMPLATES.find(t => t.id === e.target.value);
                 if (t) { setSubject(t.subject); setBody(t.body); }
               }} style={{ ...inputStyle, cursor: "pointer" }}>
-                <option value="">No template — start blank</option>
+                <option value="">No template - start blank</option>
                 {EMAIL_TEMPLATES.filter(t => t.channel === channel || t.channel === "email").map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
             </div>
@@ -1451,37 +1469,16 @@ function CommForm({ onClose, prefillAgency, prefillDataset }) {
             </div>
           </div>
 
-          {/* Email From/To */}
-          {isEmail && (
-            <div style={{ padding: "12px 14px", backgroundColor: "#FAF9F7", borderRadius: 8, border: "1px solid #E8E4DF", marginBottom: 16 }}>
-              <div style={{ display: "flex", gap: 12, fontSize: 12, color: "#525252" }}>
-                <div style={{ flex: 1 }}>
-                  <span style={{ fontWeight: 600, color: "#9CA3A0" }}>From: </span>
-                  <span>Sarah Chen &lt;data@data.org&gt;</span>
-                </div>
-                {contactId && (() => {
-                  const ct = CONTACTS.find(c => c.id === contactId);
-                  return ct?.email ? (
-                    <div style={{ flex: 1 }}>
-                      <span style={{ fontWeight: 600, color: "#9CA3A0" }}>To: </span>
-                      <span>{ct.first_name} {ct.last_name} &lt;{ct.email}&gt;</span>
-                    </div>
-                  ) : null;
-                })()}
-              </div>
-            </div>
-          )}
-
           {/* Subject */}
           <div style={{ marginBottom: 16 }}>
             <label style={labelStyle}>Subject *</label>
-            <input value={subject} onChange={e => setSubject(e.target.value)} placeholder={isEmail ? "Email subject line..." : "Brief description of the interaction..."} style={inputStyle} />
+            <input value={subject} onChange={e => setSubject(e.target.value)} placeholder={isEmail ? "Subject from the email or message..." : "Brief description of the interaction..."} style={inputStyle} />
           </div>
 
           {/* Body */}
           <div style={{ marginBottom: 16 }}>
-            <label style={labelStyle}>{isEmail ? "Email Body" : channel === "phone" ? "Call Notes" : "Details"} *</label>
-            <textarea value={body} onChange={e => setBody(e.target.value)} placeholder={isEmail ? "Compose your email..." : "Describe the interaction, key takeaways, next steps..."} rows={5}
+            <label style={labelStyle}>{isEmail ? "Email Summary Or Text" : channel === "phone" ? "Call Notes" : "Details"} *</label>
+            <textarea value={body} onChange={e => setBody(e.target.value)} placeholder={isEmail ? "Paste or summarize the email that was sent or received..." : "Describe the interaction, key takeaways, next steps..."} rows={5}
               style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6 }} />
           </div>
 
@@ -1521,18 +1518,10 @@ function CommForm({ onClose, prefillAgency, prefillDataset }) {
           <button onClick={onClose} style={{ padding: "8px 16px", border: "1px solid #E8E4DF", borderRadius: 6, backgroundColor: "#fff", color: "#525252", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: F }}>
             Cancel
           </button>
-          <div style={{ display: "flex", gap: 8 }}>
-            {isEmail && direction === "outbound" && (
-              <button onClick={handleSave} disabled={!canSave}
-                style={{ padding: "8px 20px", border: "none", borderRadius: 6, backgroundColor: canSave ? "#059669" : "#D1CDC8", color: "#fff", fontSize: 13, fontWeight: 600, cursor: canSave ? "pointer" : "not-allowed", fontFamily: F, display: "flex", alignItems: "center", gap: 6 }}>
-                {"\u2709"} Send & Log
-              </button>
-            )}
-            <button onClick={handleSave} disabled={!canSave}
-              style={{ padding: "8px 20px", border: "none", borderRadius: 6, backgroundColor: canSave ? "#0F766E" : "#D1CDC8", color: "#fff", fontSize: 13, fontWeight: 600, cursor: canSave ? "pointer" : "not-allowed", fontFamily: F }}>
-              {isEmail && direction === "outbound" ? "Log Only" : "Save Communication"}
-            </button>
-          </div>
+          <button onClick={handleSave} disabled={!canSave}
+            style={{ padding: "8px 20px", border: "none", borderRadius: 6, backgroundColor: canSave ? "#0F766E" : "#D1CDC8", color: "#fff", fontSize: 13, fontWeight: 600, cursor: canSave ? "pointer" : "not-allowed", fontFamily: F }}>
+            Save Communication
+          </button>
         </div>
       </div>
     </div>
@@ -2804,7 +2793,7 @@ function AdminSettings() {
 
   const tabs = [
     { id: "users", label: "Users & Roles", count: SYSTEM_USERS.length },
-    { id: "templates", label: "Email Templates", count: EMAIL_TEMPLATES.length },
+    { id: "templates", label: "Message Templates", count: EMAIL_TEMPLATES.length },
     { id: "system", label: "System Settings", count: null },
   ];
 
@@ -2915,7 +2904,7 @@ function AdminSettings() {
           {[
             { key: "full_name", label: "Full Name", placeholder: "Jane Doe" },
             { key: "email", label: "Email", placeholder: "jane@data.org" },
-            { key: "display_name", label: "Display Name (for outbound email)", placeholder: "Jane Doe" },
+            { key: "display_name", label: "Display Name", placeholder: "Jane Doe" },
           ].map(field => (
             <div key={field.key} style={{ marginBottom: 16 }}>
               <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4, fontFamily: F }}>{field.label}</label>
@@ -3021,7 +3010,7 @@ function AdminSettings() {
             </div>
           )}
           <div style={{ marginBottom: 20 }}>
-            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4, fontFamily: F }}>{editingTemplate.channel === "phone" ? "Call Script" : "Email Body"}</label>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4, fontFamily: F }}>{editingTemplate.channel === "phone" ? "Call Script" : "Message Body"}</label>
             <textarea value={editingTemplate.body} onChange={e => setEditingTemplate({ ...editingTemplate, body: e.target.value })} rows={10}
               style={{ width: "100%", padding: "8px 12px", border: "1px solid #E8E4DF", borderRadius: 6, fontSize: 13, color: "#262626", fontFamily: F, boxSizing: "border-box", outline: "none", resize: "vertical", lineHeight: 1.6 }} />
           </div>
@@ -3039,14 +3028,14 @@ function AdminSettings() {
       {/* ─── SYSTEM SETTINGS TAB ─── */}
       {tab === "system" && (
         <div style={{ maxWidth: 560 }}>
-          {/* Email Configuration */}
+          {/* Communication Logging Configuration */}
           <div style={{ backgroundColor: "#fff", borderRadius: 8, border: "1px solid #E8E4DF", padding: "20px 24px", marginBottom: 16 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, color: "#171717", margin: "0 0 16px", fontFamily: F }}>Email Configuration</h3>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: "#171717", margin: "0 0 16px", fontFamily: F }}>Communication Logging</h3>
             <div style={{ marginBottom: 16 }}>
-              <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4, fontFamily: F }}>Shared Outbound Email</label>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4, fontFamily: F }}>Shared Email Reference</label>
               <input value={localSettings.shared_email} onChange={e => setLocalSettings({ ...localSettings, shared_email: e.target.value })}
                 style={{ width: "100%", padding: "8px 12px", border: "1px solid #E8E4DF", borderRadius: 6, fontSize: 13, color: "#262626", fontFamily: F, boxSizing: "border-box", outline: "none" }} />
-              <div style={{ fontSize: 11, color: "#9CA3A0", marginTop: 3 }}>All outbound emails are sent from this address with individual display names.</div>
+              <div style={{ fontSize: 11, color: "#9CA3A0", marginTop: 3 }}>Optional reference address for logged communications. DataTrack records messages; it does not send them.</div>
             </div>
             <div>
               <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4, fontFamily: F }}>Organization Name</label>
@@ -3350,7 +3339,7 @@ function PasswordResetScreen({ onDone }) {
 
 // ═══ APP ═══
 export default function App() {
-  const [page, setPage] = useState("dashboard");
+  const [page, setPage] = useState(getInitialPage);
   const [selAgency, setSelAgency] = useState(null);
   const [selContact, setSelContact] = useState(null);
   const [showCommForm, setShowCommForm] = useState(false);
@@ -3402,11 +3391,16 @@ export default function App() {
     setSession(null);
   };
 
+  const setActivePage = (pg) => {
+    persistPage(pg);
+    setPage(pg);
+  };
+
   const navTo = (pg, filter) => {
     setSelAgency(null);
     setSelContact(null);
     setPageFilter(filter || {});
-    setPage(pg);
+    setActivePage(pg);
   };
 
   const openCommForm = (agencyId, datasetId) => {
@@ -3431,7 +3425,7 @@ export default function App() {
   };
 
   const renderPage = () => {
-    if (page === "agencies" && selAgency) return <AgencyDetail key={saveKey} agencyId={selAgency} onBack={() => setSelAgency(null)} onOpenForm={openCommForm} onDelete={deleteAgency} onEditRecord={setRecordForm} onViewContact={(cid) => { setSelContact(cid); setPage("contacts"); }} />;
+    if (page === "agencies" && selAgency) return <AgencyDetail key={saveKey} agencyId={selAgency} onBack={() => setSelAgency(null)} onOpenForm={openCommForm} onDelete={deleteAgency} onEditRecord={setRecordForm} onViewContact={(cid) => { setSelContact(cid); setActivePage("contacts"); }} />;
     switch (page) {
       case "dashboard": return <Dashboard key={saveKey} onNav={navTo} onAgency={setSelAgency} />;
       case "agencies": return <AgencyList key={saveKey} onSelect={setSelAgency} initFilter={pageFilter} onNewRecord={setRecordForm} />;
@@ -3440,8 +3434,8 @@ export default function App() {
       case "contacts":
         if (selContact) return <ContactDetail contactId={selContact} onBack={() => setSelContact(null)} onNav={navTo} onAgency={setSelAgency} onEditRecord={setRecordForm} onOpenCommForm={openCommForm} />;
         return <ContactDirectory key={saveKey} onNav={navTo} onAgency={setSelAgency} initFilter={pageFilter} onSelectContact={setSelContact} onEditRecord={setRecordForm} />;
-      case "requests": return <RequestList key={saveKey} onNav={navTo} onAgency={setSelAgency} initFilter={pageFilter} onEditRecord={setRecordForm} onViewContact={(cid) => { setSelContact(cid); setPage("contacts"); }} />;
-      case "tasks": return <TaskList key={saveKey} onNav={navTo} onAgency={setSelAgency} initFilter={pageFilter} onViewContact={(cid) => { setSelContact(cid); setPage("contacts"); }} />;
+      case "requests": return <RequestList key={saveKey} onNav={navTo} onAgency={setSelAgency} initFilter={pageFilter} onEditRecord={setRecordForm} onViewContact={(cid) => { setSelContact(cid); setActivePage("contacts"); }} />;
+      case "tasks": return <TaskList key={saveKey} onNav={navTo} onAgency={setSelAgency} initFilter={pageFilter} onViewContact={(cid) => { setSelContact(cid); setActivePage("contacts"); }} />;
       case "settings": return <AdminSettings key={saveKey} />;
       default: return null;
     }
@@ -3457,7 +3451,7 @@ export default function App() {
     ) : (
     <div style={{ display: "flex", minHeight: "100vh", backgroundColor: "#F8F6F3", fontFamily: F }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-      <Sidebar active={page} onNav={(pg) => { setSelAgency(null); setSelContact(null); setPageFilter({}); setPage(pg); }} onAgency={setSelAgency} currentUser={session?.user} onSignOut={signOut} />
+      <Sidebar active={page} onNav={navTo} onAgency={setSelAgency} currentUser={session?.user} onSignOut={signOut} />
       <main style={{ marginLeft: SIDEBAR_W, flex: 1, padding: "28px 32px", minHeight: "100vh", maxWidth: 1120 }}>
         {supabaseStatus.loading ? (
           <div style={{ padding: "10px 12px", borderRadius: 6, backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", color: "#0F766E", fontSize: 12, fontWeight: 600, fontFamily: F }}>Loading Supabase data...</div>
@@ -3470,7 +3464,7 @@ export default function App() {
       ) : recordForm ? (
         <RecordForm type={recordForm.type} record={recordForm.record} onClose={() => { setRecordForm(null); setSaveKey(k => k+1); }} />
       ) : null}
-      {showCommForm && <CommForm onClose={() => setShowCommForm(false)} prefillAgency={commFormPrefill.agencyId} prefillDataset={commFormPrefill.datasetId} />}
+      {showCommForm && <CommForm onClose={() => setShowCommForm(false)} prefillAgency={commFormPrefill.agencyId} prefillDataset={commFormPrefill.datasetId} currentUser={session?.user} />}
     </div>
     )
   );
