@@ -74,6 +74,15 @@ async function deleteAgencyRecord(agencyId) {
   recomputeAgencyCounts();
 }
 
+async function deleteCommunicationRecord(commId) {
+  if (sb) {
+    const { error } = await sb.from("communications").delete().eq("id", commId);
+    if (error) throw error;
+  }
+  const idx = COMMUNICATIONS.findIndex(c => c.id === commId);
+  if (idx > -1) COMMUNICATIONS.splice(idx, 1);
+}
+
 // ═══ SUPABASE-BACKED DATA ARRAYS ═══
 const AGENCIES = [];
 
@@ -1530,16 +1539,18 @@ function CommForm({ onClose, prefillAgency, prefillDataset, currentUser }) {
 
 
 // ═══ COMM DETAIL ═══
-function CommDetail({ comm, onClose }) {
-  const [editing, setEditing] = useState(false);
+function CommDetail({ comm, onClose, onSaved, onDeleted }) {
+  const [editing, setEditing] = useState(true);
   const [data, setData] = useState({...comm});
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const agency = AGENCIES.find(a => a.id === data.agency_id);
   const contact = data.contact_id ? CONTACTS.find(c => c.id === data.contact_id) : null;
   const dataset = data.dataset_id ? DATASETS.find(d => d.id === data.dataset_id) : null;
   const iS = { width: "100%", padding: "8px 12px", border: "1px solid #E8E4DF", borderRadius: 6, fontSize: 13, color: "#262626", backgroundColor: "#fff", fontFamily: F, boxSizing: "border-box", outline: "none" };
   const lS = { display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4, fontFamily: F };
-  const save = () => {
+  const save = async () => {
+    setSaveError("");
     const idx = COMMUNICATIONS.findIndex(c => c.id === data.id);
     if (idx > -1) {
       const orig = COMMUNICATIONS[idx];
@@ -1550,10 +1561,29 @@ function CommDetail({ comm, onClose }) {
       if (orig.outcome !== data.outcome) changed.push("outcome");
       if (changed.length > 0) {
         if (!data.edit_log) data.edit_log = orig.edit_log || [];
-        data.edit_log.push({ by: "Sarah Chen", date: new Date().toISOString(), fields: changed });
+        data.edit_log.push({ by: data.user_name || "User", date: new Date().toISOString(), fields: changed });
       }
-      Object.assign(orig, data);
-    } setSaved(true); setTimeout(() => { setSaved(false); setEditing(false); }, 800); };
+    }
+    try {
+      const savedRecord = await saveSupabaseBackedRecord("communications", COMMUNICATIONS, "comm", data, ["agency_id","contact_id","dataset_id","request_id","channel","direction","subject","body","user_name","outcome","follow_up_date","follow_up_status","edit_log","created_at"]);
+      setData(savedRecord);
+      if (onSaved) onSaved(savedRecord);
+      setSaved(true); setTimeout(() => { setSaved(false); onClose(); }, 800);
+    } catch (error) {
+      setSaveError(error.message || "Unable to save communication.");
+    }
+  };
+  const deleteLog = async () => {
+    if (!window.confirm(`Delete communication "${data.subject || data.id}"?`)) return;
+    setSaveError("");
+    try {
+      await deleteCommunicationRecord(data.id);
+      if (onDeleted) onDeleted(data.id);
+      onClose();
+    } catch (error) {
+      setSaveError(error.message || "Unable to delete communication.");
+    }
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 1000, paddingTop: 40, overflowY: "auto" }}>
@@ -1562,17 +1592,17 @@ function CommDetail({ comm, onClose }) {
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontSize: 18 }}>{CHANNEL_ICONS[data.channel]}</span>
-              <h2 style={{ fontSize: 18, fontWeight: 700, color: "#171717", margin: 0, fontFamily: F }}>{editing ? "Edit Communication" : data.subject}</h2>
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: "#171717", margin: 0, fontFamily: F }}>{editing ? "Edit Log" : data.subject}</h2>
             </div>
             <div style={{ fontSize: 12, color: "#9CA3A0", marginTop: 4 }}>{data.user_name} · {formatDateTime(data.created_at)} · {data.direction}</div>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
-            {!editing && <button onClick={() => setEditing(true)} style={{ padding: "6px 12px", fontSize: 12, fontWeight: 600, color: "#0F766E", backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 5, cursor: "pointer", fontFamily: F }}>Edit</button>}
             <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 6, border: "none", backgroundColor: "#F5F2EE", cursor: "pointer", fontSize: 16, color: "#6B7280" }}>{"\u2715"}</button>
           </div>
         </div>
         <div style={{ padding: "20px 24px" }}>
           {saved && <div style={{ padding: "8px 12px", backgroundColor: "#D1FAE5", borderRadius: 6, marginBottom: 12, fontSize: 13, color: "#059669", fontWeight: 600 }}>{"\u2713"} Saved</div>}
+          {saveError && <div style={{ padding: "8px 12px", backgroundColor: "#FEF2F2", borderRadius: 6, marginBottom: 12, fontSize: 13, color: "#DC2626", fontWeight: 600 }}>{saveError}</div>}
           {!editing ? (
             <div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
@@ -1593,7 +1623,7 @@ function CommDetail({ comm, onClose }) {
               </div>
               <div style={{ marginBottom: 12 }}><label style={lS}>Body</label><textarea value={data.body||""} onChange={e => setData({...data, body: e.target.value})} rows={6} style={{...iS,resize:"vertical",lineHeight:1.6}} /></div>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                <button onClick={() => setEditing(false)} style={{ padding: "8px 16px", border: "1px solid #E8E4DF", borderRadius: 6, backgroundColor: "#fff", color: "#525252", fontSize: 13, cursor: "pointer", fontFamily: F }}>Cancel</button>
+                <button onClick={onClose} style={{ padding: "8px 16px", border: "1px solid #E8E4DF", borderRadius: 6, backgroundColor: "#fff", color: "#525252", fontSize: 13, cursor: "pointer", fontFamily: F }}>Cancel</button>
                 <button onClick={save} style={{ padding: "8px 20px", border: "none", borderRadius: 6, backgroundColor: "#0F766E", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>Save</button>
               </div>
             </div>
@@ -1611,6 +1641,8 @@ function CommLog({ onNav, onAgency, onOpenForm, initFilter, onEditRecord }) {
   const [dirF, setDirF] = useState("all");
   const [expanded, setExpanded] = useState(null);
   const [editingComm, setEditingComm] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [commError, setCommError] = useState("");
 
   const agencyMap = useMemo(() => { const m = {}; AGENCIES.forEach(a => { m[a.id] = a; }); return m; }, []);
   const contactMap = useMemo(() => { const m = {}; CONTACTS.forEach(c => { m[c.id] = c; }); return m; }, []);
@@ -1624,7 +1656,19 @@ function CommLog({ onNav, onAgency, onOpenForm, initFilter, onEditRecord }) {
     if (dirF !== "all") r = r.filter(c => c.direction === dirF);
     r.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     return r;
-  }, [search, channelF, dirF]);
+  }, [search, channelF, dirF, refreshKey]);
+
+  const deleteComm = async (comm) => {
+    if (!window.confirm(`Delete log "${comm.subject || comm.id}"?`)) return;
+    setCommError("");
+    try {
+      await deleteCommunicationRecord(comm.id);
+      setExpanded(prev => prev === comm.id ? null : prev);
+      setRefreshKey(k => k + 1);
+    } catch (error) {
+      setCommError(error.message || "Unable to delete communication.");
+    }
+  };
 
   return (
     <div>
@@ -1641,6 +1685,7 @@ function CommLog({ onNav, onAgency, onOpenForm, initFilter, onEditRecord }) {
         <select value={channelF} onChange={e => setChannelF(e.target.value)} style={sel}><option value="all">All Channels</option><option value="email">Email</option><option value="phone">Phone</option><option value="foia">FOIA</option><option value="portal">Portal</option></select>
         <select value={dirF} onChange={e => setDirF(e.target.value)} style={sel}><option value="all">All Directions</option><option value="outbound">Outbound</option><option value="inbound">Inbound</option></select>
       </div>
+      {commError && <div style={{ padding: "8px 12px", backgroundColor: "#FEF2F2", borderRadius: 6, marginBottom: 12, fontSize: 13, color: "#DC2626", fontWeight: 600 }}>{commError}</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {filtered.map(comm => {
           const ag = agencyMap[comm.agency_id];
@@ -1706,9 +1751,9 @@ function CommLog({ onNav, onAgency, onOpenForm, initFilter, onEditRecord }) {
                     </div>
                   )}
                   <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={(e) => { e.stopPropagation(); setEditingComm({...comm}); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#fff", backgroundColor: "#0F766E", border: "none", borderRadius: 5, cursor: "pointer", fontFamily: F }}>Edit Communication</button>
+                    <button onClick={(e) => { e.stopPropagation(); setEditingComm({...comm}); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#fff", backgroundColor: "#0F766E", border: "none", borderRadius: 5, cursor: "pointer", fontFamily: F }}>Edit Log</button>
+                    <button onClick={(e) => { e.stopPropagation(); deleteComm(comm); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#DC2626", backgroundColor: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: 5, cursor: "pointer", fontFamily: F }}>Delete Log</button>
                     <button onClick={(e) => { e.stopPropagation(); setEditingComm(null); if (typeof onEditRecord === "function") { onEditRecord({ type: "task_create", record: { agency_id: comm.agency_id || "", contact_id: comm.contact_id || "", dataset_id: comm.dataset_id || "", title: "Task: " + comm.subject } }); } }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#D97706", backgroundColor: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 5, cursor: "pointer", fontFamily: F }}>+ Task</button>
-                    <button onClick={(e) => { e.stopPropagation(); onOpenForm && onOpenForm(comm.agency_id); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#0F766E", backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 5, cursor: "pointer", fontFamily: F }}>Log Communication</button>
                     {ag && <button onClick={(e) => { e.stopPropagation(); onNav("agencies"); onAgency(comm.agency_id); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#0D9488", backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 5, cursor: "pointer", fontFamily: F }}>View Agency {"\u2192"}</button>}
                   </div>
                 </div>
@@ -1718,7 +1763,7 @@ function CommLog({ onNav, onAgency, onOpenForm, initFilter, onEditRecord }) {
         })}
       </div>
       {filtered.length === 0 && <div style={{ padding: 40, textAlign: "center", color: "#9CA3A0", fontSize: 13, backgroundColor: "#fff", borderRadius: 8, border: "1px solid #E8E4DF" }}>No communications match your filters.</div>}
-      {editingComm && <CommDetail comm={editingComm} onClose={() => setEditingComm(null)} />}
+      {editingComm && <CommDetail comm={editingComm} onClose={() => setEditingComm(null)} onSaved={(savedComm) => { setEditingComm(savedComm); setRefreshKey(k => k + 1); }} onDeleted={(deletedId) => { setExpanded(prev => prev === deletedId ? null : prev); setRefreshKey(k => k + 1); }} />}
     </div>
   );
 }
