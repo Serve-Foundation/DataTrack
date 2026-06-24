@@ -2021,7 +2021,7 @@ function AdminSettings() {
     { id: "templates", label: "Message Templates", count: EMAIL_TEMPLATES.length },
     ...isAdmin() ? [{ id: "system", label: "System Settings", count: null }] : []
   ];
-  return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", { style: { fontSize: 22, fontWeight: 700, color: "#171717", margin: "0 0 4px", fontFamily: F } }, isAdmin() ? "Admin Settings" : "Settings"), /* @__PURE__ */ React.createElement("p", { style: { fontSize: 13, color: "#6B7280", margin: "0 0 24px" } }, isAdmin() ? "Manage users, templates, and system configuration" : "View team members and message templates"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 0, borderBottom: "2px solid #E8E4DF", marginBottom: 20 } }, tabs.map((t) => /* @__PURE__ */ React.createElement(
+  return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", { style: { fontSize: 22, fontWeight: 700, color: "#171717", margin: "0 0 4px", fontFamily: F } }, "Settings"), /* @__PURE__ */ React.createElement("p", { style: { fontSize: 13, color: "#6B7280", margin: "0 0 24px" } }, isAdmin() ? "Manage users, templates, and system configuration" : "View team members and message templates"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 0, borderBottom: "2px solid #E8E4DF", marginBottom: 20 } }, tabs.map((t) => /* @__PURE__ */ React.createElement(
     "button",
     {
       key: t.id,

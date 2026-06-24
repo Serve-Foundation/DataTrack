@@ -3051,7 +3051,7 @@ function AdminSettings() {
 
   return (
     <div>
-      <h1 style={{ fontSize: 22, fontWeight: 700, color: "#171717", margin: "0 0 4px", fontFamily: F }}>{isAdmin() ? "Admin Settings" : "Settings"}</h1>
+      <h1 style={{ fontSize: 22, fontWeight: 700, color: "#171717", margin: "0 0 4px", fontFamily: F }}>Settings</h1>
       <p style={{ fontSize: 13, color: "#6B7280", margin: "0 0 24px" }}>{isAdmin() ? "Manage users, templates, and system configuration" : "View team members and message templates"}</p>
 
       {/* Tabs */}
