@@ -543,10 +543,10 @@ function Sidebar({ active, onNav, onAgency, currentUser, onSignOut }) {
         })}
       </nav>
       <div style={{ padding: "12px 8px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-        {isAdmin() && <button onClick={() => onNav("settings")} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 12px", border: "none", borderRadius: 6, cursor: "pointer", backgroundColor: active === "settings" ? "rgba(20,184,166,0.12)" : "transparent", color: active === "settings" ? "#5EEAD4" : "#64748B" }}>
+        <button onClick={() => onNav("settings")} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 12px", border: "none", borderRadius: 6, cursor: "pointer", backgroundColor: active === "settings" ? "rgba(20,184,166,0.12)" : "transparent", color: active === "settings" ? "#5EEAD4" : "#64748B" }}>
           <Icon name="settings" size={17} />
           <span style={{ fontSize: 13, fontFamily: F }}>Settings</span>
-        </button>}
+        </button>
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px 4px" }}>
           <div style={{ width: 28, height: 28, borderRadius: "50%", backgroundColor: "#115E59", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <span style={{ color: "#99F6E4", fontSize: 11, fontWeight: 700 }}>{initials}</span>
@@ -3018,11 +3018,9 @@ const ROLE_CONFIG = {
 };
 
 function AdminSettings() {
-  if (!isAdmin()) return (
-    <div style={{ padding: 40, textAlign: "center", color: "#9CA3A0", fontFamily: F, fontSize: 14 }}>
-      Settings is only available to Admins.
-    </div>
-  );
+  const role = effectiveRole();
+  const canManageUsers = role === "admin";
+  const canManageTemplates = ["admin", "specialist", "analyst"].includes(role);
   const [tab, setTab] = useState("users");
   const [editingUser, setEditingUser] = useState(null);
   const [editingTemplate, setEditingTemplate] = useState(null);
@@ -3048,13 +3046,13 @@ function AdminSettings() {
   const tabs = [
     { id: "users", label: "Users & Roles", count: SYSTEM_USERS.length },
     { id: "templates", label: "Message Templates", count: EMAIL_TEMPLATES.length },
-    { id: "system", label: "System Settings", count: null },
+    ...(isAdmin() ? [{ id: "system", label: "System Settings", count: null }] : []),
   ];
 
   return (
     <div>
-      <h1 style={{ fontSize: 22, fontWeight: 700, color: "#171717", margin: "0 0 4px", fontFamily: F }}>Admin Settings</h1>
-      <p style={{ fontSize: 13, color: "#6B7280", margin: "0 0 24px" }}>Manage users, templates, and system configuration</p>
+      <h1 style={{ fontSize: 22, fontWeight: 700, color: "#171717", margin: "0 0 4px", fontFamily: F }}>{isAdmin() ? "Admin Settings" : "Settings"}</h1>
+      <p style={{ fontSize: 13, color: "#6B7280", margin: "0 0 24px" }}>{isAdmin() ? "Manage users, templates, and system configuration" : "View team members and message templates"}</p>
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 0, borderBottom: "2px solid #E8E4DF", marginBottom: 20 }}>
@@ -3081,10 +3079,10 @@ function AdminSettings() {
                 );
               })}
             </div>
-            <button onClick={() => setEditingUser({ id: "new", full_name: "", email: "", display_name: "", role: "specialist", is_active: true })}
+            {canManageUsers && <button onClick={() => setEditingUser({ id: "new", full_name: "", email: "", display_name: "", role: "specialist", is_active: true })}
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
               <Icon name="plus" size={15} color="#fff" /> Add User
-            </button>
+            </button>}
           </div>
 
           <div style={{ backgroundColor: "#fff", borderRadius: 8, border: "1px solid #E8E4DF", overflow: "hidden" }}>
@@ -3121,8 +3119,8 @@ function AdminSettings() {
                       </td>
                       <td style={{ padding: "12px 14px", fontSize: 11, color: "#9CA3A0" }}>{formatDate(u.last_active)}</td>
                       <td style={{ padding: "12px 14px" }}>
-                        <button onClick={() => setEditingUser({ ...u })}
-                          style={{ padding: "4px 10px", fontSize: 11, fontWeight: 600, color: "#0D9488", backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 4, cursor: "pointer", fontFamily: F }}>Edit</button>
+                        {canManageUsers && <button onClick={() => setEditingUser({ ...u })}
+                          style={{ padding: "4px 10px", fontSize: 11, fontWeight: 600, color: "#0D9488", backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 4, cursor: "pointer", fontFamily: F }}>Edit</button>}
                       </td>
                     </tr>
                   );
@@ -3198,12 +3196,12 @@ function AdminSettings() {
       {/* ─── TEMPLATES TAB ─── */}
       {tab === "templates" && !editingTemplate && (
         <div>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+          {canManageTemplates && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
             <button onClick={() => setEditingTemplate({ id: "new", name: "", channel: "email", subject: "", body: "", is_active: true })}
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
               <Icon name="plus" size={15} color="#fff" /> New Template
             </button>
-          </div>
+          </div>}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {EMAIL_TEMPLATES.map(t => {
               const channelLabel = { email: "\u2709 Email", phone: "\u260E Phone", foia: "\u229F FOIA", portal: "\u25EB Portal" }[t.channel] || t.channel;
@@ -3220,8 +3218,8 @@ function AdminSettings() {
                       {t.subject && <div style={{ fontSize: 12, color: "#6B7280", marginBottom: 4 }}>Subject: {t.subject}</div>}
                       <div style={{ fontSize: 12, color: "#9CA3A0", lineHeight: 1.4, maxHeight: 40, overflow: "hidden" }}>{t.body.substring(0, 120)}...</div>
                     </div>
-                    <button onClick={() => setEditingTemplate({ ...t })}
-                      style={{ padding: "4px 10px", fontSize: 11, fontWeight: 600, color: "#0D9488", backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 4, cursor: "pointer", fontFamily: F, flexShrink: 0, marginLeft: 12 }}>Edit</button>
+                    {canManageTemplates && <button onClick={() => setEditingTemplate({ ...t })}
+                      style={{ padding: "4px 10px", fontSize: 11, fontWeight: 600, color: "#0D9488", backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 4, cursor: "pointer", fontFamily: F, flexShrink: 0, marginLeft: 12 }}>Edit</button>}
                   </div>
                 </div>
               );
