@@ -31,30 +31,35 @@ DataTrack supports the main day-to-day workflows for a data acquisition team:
 ## Features Added
 
 - Live GitHub Pages deployment with a clean root URL.
-- Dashboard with clickable metrics, role-based views, pipeline summaries, overdue task alerts, and recent activity.
+- Dashboard with clickable metrics, role-based views, pipeline summaries, overdue task alerts, and recent activity. Admins can preview the dashboard as any role.
 - Agency directory with search, filters, sorting, pagination, detail tabs, linked contacts, linked datasets, communications, and notes.
 - Contact directory and contact detail pages with agency links, communication history, notes, and multi-value emails and phone numbers.
 - Dataset tracking with acquisition status, method, category, format, refresh cadence, cost, portal/API fields, and analyst review panels.
-- Communication logging for email, phone, FOIA/CPRA, and portal interactions, including direction, outcome, follow-up date, templates, linked records, and edit history.
+- Communication logging for email, phone, FOIA/CPRA, and portal interactions, including direction, outcome, follow-up date, templates, and linked records.
 - Request tracking for CPRA, FOIA, API access, direct purchase, and manual data requests with statuses, assignees, contacts, costs, references, notes, and communication threads.
 - Task management with assignees, priorities, due dates, linked records, note history, assignment history, complete action, snooze options, and follow-up task creation.
 - Analyst data review workflow with preset feedback tags, review statuses, custom notes, and file-level review history.
 - Record creation and editing flows for agencies, contacts, datasets, requests, communications, tasks, and reviews.
 - Password sign-in screen and forgot-password reset flow connected to Supabase Auth.
-- Admin settings area for users, roles, email templates, and system configuration.
+- Self-service account creation gateway using Supabase Auth with automatic user row creation via a Postgres trigger.
+- Role-based access control enforced in the UI across all four roles — Admin, Specialist, Analyst, and Viewer. Each role sees only the actions they are permitted to take.
+- Settings page accessible to all roles. Admins have full access. Specialists and Analysts can view users and manage message templates. Viewers have read-only access to both.
+- In-app Help Center with a User Manual tab and a Troubleshooting tab. Technical troubleshooting content is visible to Admins only.
+- Supabase Realtime subscriptions across all 11 data tables. Changes made by any user are pushed to all connected sessions automatically.
 
 ## Main App Areas
 
 | Area | What it is used for |
 | --- | --- |
-| Dashboard | Team overview, pipeline status, overdue work, and quick navigation. |
+| Dashboard | Team overview, pipeline status, overdue work, and quick navigation. Admins can preview any role view. |
 | Agencies | Source agencies, jurisdiction details, linked contacts, datasets, communications, and notes. |
 | Contacts | People inside agencies, including contact methods and communication history. |
 | Datasets | Target datasets, acquisition status, methods, formats, cost, cadence, and analyst review. |
 | Communications | Logged interactions with agencies and contacts, including follow-up tracking. |
 | Requests | Formal and informal data request workflow tracking. |
 | Tasks | Shared work queue for follow-ups, reviews, clarifications, and assignments. |
-| Settings | User roles, templates, and system-level configuration. |
+| Settings | User management and roles (Admin only), message templates (Admin, Specialist, Analyst), and system configuration (Admin only). |
+| Help | In-app User Manual and Troubleshooting guide. Technical section visible to Admins only. |
 
 ## Current App Files
 
@@ -107,7 +112,9 @@ The app includes a sign-in screen, a `Forgot password?` flow, password reset han
 
 When a user creates an account, they enter their full name, email, password, and requested app role. The app sends those details to Supabase Auth as user metadata. After the user confirms their email and signs in, DataTrack uses the existing Supabase session flow to load the app.
 
-To make new signups appear in **Settings -> Users & Roles**, run `simple-create-account-gateway.sql` in the Supabase SQL Editor. The SQL creates a trigger on `auth.users` that inserts or updates the matching row in `public.users`, keeps the new user active, stores the selected role, and falls back to `viewer` if the role is missing or invalid.
+To make new signups appear in **Settings → Users & Roles**, run `simple-create-account-gateway.sql` once in the Supabase SQL Editor. The SQL creates a trigger on `auth.users` that automatically inserts a matching row in `public.users` on every new signup, stores the requested role, and falls back to `viewer` if the role is missing or invalid. This is a one-time setup — it does not need to be re-run for each new user.
+
+Supabase's built-in email service is rate-limited to **3 confirmation emails per hour** on the free plan. If a new user does not receive their confirmation email, an Admin can manually confirm the account in the Supabase dashboard under **Authentication → Users**. Alternatively, disable email confirmation entirely under **Authentication → Providers → Email** — recommended for internal team tools. For higher volume, configure a custom SMTP provider under **Authentication → SMTP Settings**.
 
 For authentication to work, the constants at the top of the app must point to a valid Supabase project:
 
@@ -147,7 +154,23 @@ Important backend behavior:
 - The app signs users in through Supabase Auth.
 - App records are loaded from Supabase tables when the configured project is reachable.
 - Create, edit, and delete actions are wired through Supabase-backed helpers for the supported records.
-- The database schema is documented in `DataTrack_Acquire_Handoff.md`.
+- Supabase Realtime subscriptions keep all connected sessions in sync. Any change one user makes is pushed to everyone else immediately. To enable this, each table must be added to the Supabase replication publication — run the following once in the SQL Editor:
+
+```sql
+alter publication supabase_realtime add table agencies;
+alter publication supabase_realtime add table contacts;
+alter publication supabase_realtime add table datasets;
+alter publication supabase_realtime add table communications;
+alter publication supabase_realtime add table requests;
+alter publication supabase_realtime add table tasks;
+alter publication supabase_realtime add table notes;
+alter publication supabase_realtime add table data_reviews;
+alter publication supabase_realtime add table users;
+alter publication supabase_realtime add table email_templates;
+alter publication supabase_realtime add table feedback_presets;
+```
+
+- The database schema is documented in `docs/DataTrack_Acquire_Handoff.md`.
 
 ## Development Notes
 
@@ -156,7 +179,12 @@ The app currently has no package manager, build system, or local framework serve
 Recommended workflow:
 
 1. Edit `DataTrack_v11plus.jsx` for source changes.
-2. Keep `DataTrack_v11plus.html` and `index.html` updated if the deployed app needs to reflect those changes immediately.
+2. Recompile to HTML using esbuild:
+
+```bash
+{ head -22 DataTrack_v11plus.html; npx esbuild DataTrack_v11plus.jsx --platform=browser --target=es2020; echo '</script>'; echo '</body>'; echo '</html>'; } > new.html && cp new.html DataTrack_v11plus.html && cp DataTrack_v11plus.html index.html
+```
+
 3. Use the local HTTP server for manual testing.
 4. Commit and push changes to GitHub after verifying the app still loads.
 
