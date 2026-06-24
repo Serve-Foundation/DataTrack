@@ -64,13 +64,22 @@ DataTrack supports the main day-to-day workflows for a data acquisition team:
 | `DataTrack_v11plus.html` | Runnable app. Open this in a browser or serve it locally. |
 | `DataTrack_v11plus.jsx` | Main JSX source for the app. |
 | `DataTrack_v11plus_dev.jsx` | ES module development version. |
+| `simple-create-account-gateway.sql` | Supabase trigger for new user signup flow. |
 | `USER_MANUAL.md` | Plain-language guide for everyday DataTrack users and stakeholders. |
 | `TROUBLESHOOTING_MANUAL.md` | Common troubleshooting steps for users, admins, and developers. |
-| `DataTrack_Acquire_Handoff.md` | Detailed technical handoff, schema, features, and version history. |
-| `Supabase_integration_plan.md` | Step-by-step Supabase integration plan. |
-| `DataTrack_Build_Plan.md` | Build plan, timeline, roles, and infrastructure notes. |
-| `DataTrack_PM_Briefing.md` | Project manager briefing and team coordination notes. |
-| `README_handoff.md` | Original handoff README preserved for reference. |
+
+## Reference Docs
+
+Historical planning and handoff documents are in the `docs/` folder.
+
+| File | Purpose |
+| --- | --- |
+| `docs/DataTrack_Acquire_Handoff.md` | Detailed technical handoff, schema, features, and version history. |
+| `docs/Supabase_integration_plan.md` | Step-by-step Supabase integration plan. |
+| `docs/DataTrack_Build_Plan.md` | Build plan, timeline, roles, and infrastructure notes. |
+| `docs/DataTrack_PM_Briefing.md` | Project manager briefing and team coordination notes. |
+| `docs/simple-create-account-plan.md` | Original account creation planning notes. |
+| `docs/README_handoff.md` | Original handoff README preserved for reference. |
 
 ## Run Locally
 

@@ -1,7 +1,21 @@
 {
   "permissions": {
     "allow": [
-      "Bash(awk '/^const [A-Z]/ {print NR\": \"$0}' /Users/greshashah126/Desktop/DataTrack/DataTrack_v11plus.jsx)"
+      "Bash(awk '/^const [A-Z]/ {print NR\": \"$0}' /Users/greshashah126/Desktop/DataTrack/DataTrack_v11plus.jsx)",
+      "Bash(npx --yes esbuild DataTrack_v11plus.jsx --loader=jsx --platform=browser --target=es2020)",
+      "Bash(npx --yes esbuild DataTrack_v11plus.jsx --platform=browser --target=es2020)",
+      "Bash(npx esbuild *)",
+      "Bash(npx playwright *)",
+      "Bash(curl -s http://localhost:5174/DataTrack_v11plus.html)",
+      "Bash(mkdir -p /private/tmp/claude-501/-Users-greshashah126-Desktop-DataTrack/33ba9a0a-625c-4bbc-bc84-8b6ba8f82399/scratchpad/pw)",
+      "Bash(npm init *)",
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5174/DataTrack_v11plus.html)",
+      "Bash(open \"http://localhost:5174/DataTrack_v11plus.html\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ],
     "additionalDirectories": [
       "/Users/greshashah126/.claude/plans"
