@@ -65,8 +65,6 @@ DataTrack supports the main day-to-day workflows for a data acquisition team:
 | `DataTrack_v11plus.jsx` | Main JSX source for the app. |
 | `DataTrack_v11plus_dev.jsx` | ES module development version. |
 | `simple-create-account-gateway.sql` | Supabase trigger for new user signup flow. |
-| `USER_MANUAL.md` | Plain-language guide for everyday DataTrack users and stakeholders. |
-| `TROUBLESHOOTING_MANUAL.md` | Common troubleshooting steps for users, admins, and developers. |
 
 ## Reference Docs
 
