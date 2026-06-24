@@ -65,6 +65,44 @@ async function loadSupabaseSeedTables() {
   return { error: "" };
 }
 
+function setupRealtimeSubscriptions(setSaveKey) {
+  if (!sb) return null;
+  const TABLE_MAP = [
+    ["agencies",        AGENCIES],
+    ["contacts",        CONTACTS],
+    ["datasets",        DATASETS],
+    ["communications",  COMMUNICATIONS],
+    ["requests",        REQUESTS],
+    ["tasks",           TASKS],
+    ["notes",           NOTES],
+    ["data_reviews",    DATA_REVIEWS],
+    ["users",           SYSTEM_USERS],
+    ["email_templates", EMAIL_TEMPLATES],
+    ["feedback_presets",FEEDBACK_PRESETS],
+  ];
+  const channel = sb.channel("datatrack-realtime");
+  TABLE_MAP.forEach(([table, array]) => {
+    channel.on("postgres_changes", { event: "*", schema: "public", table }, (payload) => {
+      const { eventType, new: rec, old: oldRec } = payload;
+      if (eventType === "INSERT") {
+        if (!array.find(r => r.id === rec.id)) array.push(rec);
+      } else if (eventType === "UPDATE") {
+        const idx = array.findIndex(r => r.id === rec.id);
+        if (idx > -1) Object.assign(array[idx], rec);
+        else array.push(rec);
+      } else if (eventType === "DELETE") {
+        const idx = array.findIndex(r => r.id === oldRec.id);
+        if (idx > -1) array.splice(idx, 1);
+      }
+      normalizeMultiValueFields();
+      recomputeAgencyCounts();
+      setSaveKey(k => k + 1);
+    });
+  });
+  channel.subscribe();
+  return channel;
+}
+
 async function deleteAgencyRecord(agencyId) {
   if (sb) {
     const { error } = await sb.from("agencies").delete().eq("id", agencyId);
@@ -180,15 +218,15 @@ function ContactDetail({ contactId, onBack, onNav, onAgency, onEditRecord, onOpe
           <p style={{ fontSize: 13, color: "#6B7280", margin: 0 }}>{contact.title} · {agency?.name}</p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => onOpenCommForm && onOpenCommForm(contact.agency_id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
+          {canLogComm() && <button onClick={() => onOpenCommForm && onOpenCommForm(contact.agency_id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
             {"✉"} Log Communication
-          </button>
-          <button onClick={() => onEditRecord && onEditRecord({ type: "task_create", record: { contact_id: contactId, agency_id: contact.agency_id } })} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#FFFBEB", color: "#D97706", border: "1px solid #FDE68A", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
+          </button>}
+          {canTask() && <button onClick={() => onEditRecord && onEditRecord({ type: "task_create", record: { contact_id: contactId, agency_id: contact.agency_id } })} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#FFFBEB", color: "#D97706", border: "1px solid #FDE68A", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
             + Task
-          </button>
-          <button onClick={() => onEditRecord && onEditRecord({ type: "contact", record: { ...contact } })} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#fff", color: "#0F766E", border: "1px solid #99F6E4", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
+          </button>}
+          {canEdit() && <button onClick={() => onEditRecord && onEditRecord({ type: "contact", record: { ...contact } })} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#fff", color: "#0F766E", border: "1px solid #99F6E4", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
             Edit Contact
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -307,6 +345,19 @@ const DATA_REVIEWS = [];
 
 const FEEDBACK_PRESETS = [];
 
+// ═══ ROLE-BASED PERMISSIONS ═══
+let CURRENT_ROLE = "viewer";
+let PREVIEW_ROLE = null;
+const effectiveRole  = () => PREVIEW_ROLE ?? CURRENT_ROLE;
+const canCreate  = () => ["admin", "specialist", "analyst"].includes(effectiveRole());
+const canEdit    = () => ["admin", "specialist", "analyst"].includes(effectiveRole());
+const canDelete  = () => effectiveRole() === "admin";
+const canLogComm = () => ["admin", "specialist", "analyst"].includes(effectiveRole());
+const canTask    = () => effectiveRole() !== "viewer";
+const canNote    = () => effectiveRole() !== "viewer";
+const canReview  = () => effectiveRole() !== "viewer";
+const isAdmin    = () => CURRENT_ROLE === "admin";
+
 const TASK_TYPE_CONFIG = {
   follow_up: { label: "Follow-up", color: "#D97706", bg: "#FEF3C7" },
   data_review: { label: "Data Review", color: "#7C3AED", bg: "#EDE9FE" },
@@ -424,6 +475,7 @@ function Icon({ name, size = 18, color = "currentColor" }) {
     alert: <><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></>,
     chevL: <path d="M15 18l-6-6 6-6"/>,
     chevR: <path d="M9 18l6-6-6-6"/>,
+    help_circle: <><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/></>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" style={{ flexShrink: 0 }}>{p[name]}</svg>;
 }
@@ -438,6 +490,7 @@ const NAV_ITEMS = [
   { id: "contacts", icon: "users", label: "Contacts" },
   { id: "requests", icon: "mail", label: "Requests" },
   { id: "tasks", icon: "clock", label: "Tasks" },
+  { id: "help", icon: "help_circle", label: "Help" },
 ];
 
 const VALID_PAGES = new Set([...NAV_ITEMS.map(item => item.id), "settings"]);
@@ -490,10 +543,10 @@ function Sidebar({ active, onNav, onAgency, currentUser, onSignOut }) {
         })}
       </nav>
       <div style={{ padding: "12px 8px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-        <button onClick={() => onNav("settings")} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 12px", border: "none", borderRadius: 6, cursor: "pointer", backgroundColor: active === "settings" ? "rgba(20,184,166,0.12)" : "transparent", color: active === "settings" ? "#5EEAD4" : "#64748B" }}>
+        {isAdmin() && <button onClick={() => onNav("settings")} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 12px", border: "none", borderRadius: 6, cursor: "pointer", backgroundColor: active === "settings" ? "rgba(20,184,166,0.12)" : "transparent", color: active === "settings" ? "#5EEAD4" : "#64748B" }}>
           <Icon name="settings" size={17} />
           <span style={{ fontSize: 13, fontFamily: F }}>Settings</span>
-        </button>
+        </button>}
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px 4px" }}>
           <div style={{ width: 28, height: 28, borderRadius: "50%", backgroundColor: "#115E59", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <span style={{ color: "#99F6E4", fontSize: 11, fontWeight: 700 }}>{initials}</span>
@@ -563,9 +616,9 @@ function AgencyList({ onSelect, initFilter, onNewRecord }) {
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "#171717", margin: 0, fontFamily: F }}>Agencies</h1>
           <p style={{ fontSize: 13, color: "#6B7280", margin: "4px 0 0" }}>{filtered.length} agencies across {new Set(filtered.map(a => a.jurisdiction)).size} counties</p>
         </div>
-        <button onClick={() => onNewRecord && onNewRecord({ type: "agency", record: {} })} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
+        {canCreate() && <button onClick={() => onNewRecord && onNewRecord({ type: "agency", record: {} })} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
           <Icon name="plus" size={15} color="#fff" /> Add Agency
-        </button>
+        </button>}
       </div>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
@@ -617,7 +670,7 @@ function AgencyList({ onSelect, initFilter, onNewRecord }) {
                 <td style={{ padding: "12px 16px", fontSize: 13, color: datasetCountMap[a.id] ? "#7C3AED" : "#D1CDC8", fontWeight: datasetCountMap[a.id] ? 600 : 400 }}>{datasetCountMap[a.id] || 0}</td>
                 <td style={{ padding: "12px 16px", fontSize: 13, color: contactCountMap[a.id] ? "#0F766E" : "#D1CDC8", fontWeight: contactCountMap[a.id] ? 600 : 400 }}>{contactCountMap[a.id] || 0}</td>
                 <td style={{ padding: "12px 16px", textAlign: "right" }}>
-                  <button onClick={(e) => deleteAgency(a, e)} style={{ padding: "5px 9px", border: "1px solid #FCA5A5", borderRadius: 5, backgroundColor: "#FEF2F2", color: "#DC2626", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: F }}>Delete</button>
+                  {canDelete() && <button onClick={(e) => deleteAgency(a, e)} style={{ padding: "5px 9px", border: "1px solid #FCA5A5", borderRadius: 5, backgroundColor: "#FEF2F2", color: "#DC2626", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: F }}>Delete</button>}
                 </td>
               </tr>
             ))}
@@ -689,12 +742,12 @@ function AgencyDetail({ agencyId, onBack, onOpenForm, onDelete, onEditRecord, on
           <p style={{ fontSize: 13, color: "#6B7280", margin: 0 }}>{agency.jurisdiction} County, {agency.state}</p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => onDelete && onDelete(agency)} style={{ padding: "8px 14px", backgroundColor: "#FEF2F2", color: "#DC2626", border: "1px solid #FCA5A5", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: F }}>
+          {canDelete() && <button onClick={() => onDelete && onDelete(agency)} style={{ padding: "8px 14px", backgroundColor: "#FEF2F2", color: "#DC2626", border: "1px solid #FCA5A5", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: F }}>
             Delete
-          </button>
-          <button onClick={() => onOpenForm && onOpenForm(agencyId)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
+          </button>}
+          {canLogComm() && <button onClick={() => onOpenForm && onOpenForm(agencyId)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
             <Icon name="message" size={14} color="#fff" /> Log Communication
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -735,11 +788,11 @@ function AgencyDetail({ agencyId, onBack, onOpenForm, onDelete, onEditRecord, on
 
       {tab === "contacts" && (
         <div>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+          {canCreate() && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
             <button onClick={() => onEditRecord && onEditRecord({ type: "contact", record: { agency_id: agencyId, is_active: true } })} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", backgroundColor: "#F8F6F3", color: "#525252", border: "1px solid #E8E4DF", borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: F }}>
               <Icon name="plus" size={13} color="#525252" /> Add Contact
             </button>
-          </div>
+          </div>}
           {agContacts.length === 0 ? (
             <div style={{ padding: 40, textAlign: "center", backgroundColor: "#fff", borderRadius: 8, border: "1px solid #E8E4DF" }}>
               <div style={{ fontSize: 28, marginBottom: 8 }}>\uD83D\uDCCB</div>
@@ -864,8 +917,7 @@ function AgencyDetail({ agencyId, onBack, onOpenForm, onDelete, onEditRecord, on
 }
 
 // ═══ DASHBOARD ═══
-function Dashboard({ onNav, onAgency }) {
-  const [dashRole, setDashRole] = useState("admin");
+function Dashboard({ onNav, onAgency, dashRole, onDashRoleChange: setDashRole }) {
   const typeCounts = {};
   AGENCIES.forEach(a => { typeCounts[a.agency_type] = (typeCounts[a.agency_type] || 0) + 1; });
 
@@ -897,12 +949,19 @@ function Dashboard({ onNav, onAgency }) {
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "#171717", margin: "0 0 4px", fontFamily: F }}>Dashboard</h1>
           <p style={{ fontSize: 13, color: "#6B7280", margin: 0 }}>California statewide data acquisition overview</p>
         </div>
-        <select value={dashRole} onChange={e => setDashRole(e.target.value)}
-          style={{ padding: "8px 14px", border: "1px solid #E8E4DF", borderRadius: 6, fontSize: 13, color: "#525252", backgroundColor: "#fff", cursor: "pointer", fontFamily: F, fontWeight: 600 }}>
-          <option value="admin">Admin View</option>
-          <option value="specialist">Acquisition Specialist</option>
-          <option value="analyst">Data Analyst</option>
-        </select>
+        {isAdmin() ? (
+          <select value={dashRole} onChange={e => setDashRole(e.target.value)}
+            style={{ padding: "8px 14px", border: "1px solid #0F766E", borderRadius: 6, fontSize: 13, color: "#525252", backgroundColor: "#fff", cursor: "pointer", fontFamily: F, fontWeight: 600 }}>
+            <option value="admin">Admin View</option>
+            <option value="specialist">Acquisition Specialist</option>
+            <option value="analyst">Data Analyst</option>
+            <option value="viewer">Viewer</option>
+          </select>
+        ) : (
+          <div style={{ padding: "8px 14px", border: "1px solid #E8E4DF", borderRadius: 6, fontSize: 13, color: "#525252", backgroundColor: "#fff", fontFamily: F, fontWeight: 600 }}>
+            {{ admin: "Admin View", specialist: "Acquisition Specialist", analyst: "Data Analyst", viewer: "Viewer" }[CURRENT_ROLE] || CURRENT_ROLE}
+          </div>
+        )}
       </div>
 
       {/* Row 1: Key metrics — all clickable */}
@@ -1161,9 +1220,9 @@ function DatasetList({ onNav, onAgency, initFilter, onEditRecord }) {
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "#171717", margin: 0, fontFamily: F }}>Datasets</h1>
           <p style={{ fontSize: 13, color: "#6B7280", margin: "4px 0 0" }}>{filtered.length} data sources across {new Set(filtered.map(d => agencyMap[d.agency_id]?.jurisdiction).filter(Boolean)).size} counties</p>
         </div>
-        <button onClick={() => onEditRecord && onEditRecord({ type: "dataset", record: { acquisition_status: "identified", acquisition_method: "unknown", refresh_frequency: "unknown", cost_amount: 0, automation_feasible: false } })} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
+        {canCreate() && <button onClick={() => onEditRecord && onEditRecord({ type: "dataset", record: { acquisition_status: "identified", acquisition_method: "unknown", refresh_frequency: "unknown", cost_amount: 0, automation_feasible: false } })} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
           <Icon name="plus" size={15} color="#fff" /> Add Dataset
-        </button>
+        </button>}
       </div>
 
       {/* Pipeline Summary Bar */}
@@ -1728,7 +1787,7 @@ function CommLog({ onNav, onAgency, onOpenForm, initFilter, onEditRecord }) {
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "#171717", margin: 0, fontFamily: F }}>Communications</h1>
           <p style={{ fontSize: 13, color: "#6B7280", margin: "4px 0 0" }}>{COMMUNICATIONS.length} logged interactions</p>
         </div>
-        <button onClick={() => onOpenForm && onOpenForm()} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}><Icon name="plus" size={15} color="#fff" /> Log Communication</button>
+        {canLogComm() && <button onClick={() => onOpenForm && onOpenForm()} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}><Icon name="plus" size={15} color="#fff" /> Log Communication</button>}
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: "1 1 200px" }}><div style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }}><Icon name="search" size={15} color="#9CA3A0" /></div>
@@ -1802,9 +1861,9 @@ function CommLog({ onNav, onAgency, onOpenForm, initFilter, onEditRecord }) {
                     </div>
                   )}
                   <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={(e) => { e.stopPropagation(); setEditingComm({...comm}); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#fff", backgroundColor: "#0F766E", border: "none", borderRadius: 5, cursor: "pointer", fontFamily: F }}>Edit Log</button>
-                    <button onClick={(e) => { e.stopPropagation(); deleteComm(comm); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#DC2626", backgroundColor: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: 5, cursor: "pointer", fontFamily: F }}>Delete Log</button>
-                    <button onClick={(e) => { e.stopPropagation(); setEditingComm(null); if (typeof onEditRecord === "function") { onEditRecord({ type: "task_create", record: { agency_id: comm.agency_id || "", contact_id: comm.contact_id || "", dataset_id: comm.dataset_id || "", title: "Task: " + comm.subject } }); } }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#D97706", backgroundColor: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 5, cursor: "pointer", fontFamily: F }}>+ Task</button>
+                    {canEdit() && <button onClick={(e) => { e.stopPropagation(); setEditingComm({...comm}); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#fff", backgroundColor: "#0F766E", border: "none", borderRadius: 5, cursor: "pointer", fontFamily: F }}>Edit Log</button>}
+                    {canDelete() && <button onClick={(e) => { e.stopPropagation(); deleteComm(comm); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#DC2626", backgroundColor: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: 5, cursor: "pointer", fontFamily: F }}>Delete Log</button>}
+                    {canTask() && <button onClick={(e) => { e.stopPropagation(); setEditingComm(null); if (typeof onEditRecord === "function") { onEditRecord({ type: "task_create", record: { agency_id: comm.agency_id || "", contact_id: comm.contact_id || "", dataset_id: comm.dataset_id || "", title: "Task: " + comm.subject } }); } }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#D97706", backgroundColor: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 5, cursor: "pointer", fontFamily: F }}>+ Task</button>}
                     {ag && <button onClick={(e) => { e.stopPropagation(); onNav("agencies"); onAgency(comm.agency_id); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#0D9488", backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 5, cursor: "pointer", fontFamily: F }}>View Agency {"\u2192"}</button>}
                   </div>
                 </div>
@@ -1872,14 +1931,14 @@ function NotesPanel({ entityType, entityId }) {
           <h3 style={{ fontSize: 14, fontWeight: 700, color: "#171717", margin: 0, fontFamily: F }}>Notes</h3>
           <span style={{ fontSize: 11, color: "#9CA3A0", fontWeight: 500 }}>{entityNotes.length}</span>
         </div>
-        <button onClick={() => setShowAdd(!showAdd)}
+        {canNote() && <button onClick={() => setShowAdd(!showAdd)}
           style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 10px", backgroundColor: showAdd ? "#FEE2E2" : "#F0FDFA", color: showAdd ? "#DC2626" : "#0F766E", border: "none", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
           {showAdd ? "\u2715 Cancel" : "+ Add Note"}
-        </button>
+        </button>}
       </div>
 
       {/* Add note form */}
-      {showAdd && (
+      {canNote() && showAdd && (
         <div style={{ padding: "12px 16px", backgroundColor: "#FAFBFC", borderBottom: "1px solid #E8E4DF" }}>
           <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
             {Object.entries(NOTE_TYPE_CONFIG).map(([key, cfg]) => (
@@ -1997,9 +2056,9 @@ function ContactDirectory({ onNav, onAgency, initFilter, onSelectContact, onEdit
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "#171717", margin: 0, fontFamily: F }}>Contact Directory</h1>
           <p style={{ fontSize: 13, color: "#6B7280", margin: "4px 0 0" }}>{filtered.length} contacts across {new Set(filtered.map(c => agencyMap[c.agency_id]?.jurisdiction).filter(Boolean)).size} counties</p>
         </div>
-        <button onClick={() => onEditRecord && onEditRecord({ type: "contact", record: { is_active: true } })} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
+        {canCreate() && <button onClick={() => onEditRecord && onEditRecord({ type: "contact", record: { is_active: true } })} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
           <Icon name="plus" size={15} color="#fff" /> Add Contact
-        </button>
+        </button>}
       </div>
 
       {/* Department summary */}
@@ -2169,9 +2228,9 @@ function RequestList({ onNav, onAgency, initFilter, onEditRecord }) {
             {awaitingCount > 0 && <span style={{ color: "#D97706", fontWeight: 600 }}> · {awaitingCount} awaiting response</span>}
           </p>
         </div>
-        <button onClick={() => onEditRecord && onEditRecord({ type: "request", record: { status: "draft", request_type: "cpra", created_at: new Date().toISOString(), cost_quoted: 0, cost_paid: 0 } })} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
+        {canCreate() && <button onClick={() => onEditRecord && onEditRecord({ type: "request", record: { status: "draft", request_type: "cpra", created_at: new Date().toISOString(), cost_quoted: 0, cost_paid: 0 } })} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
           <Icon name="plus" size={15} color="#fff" /> New Request
-        </button>
+        </button>}
       </div>
 
       {/* Status pipeline */}
@@ -2294,18 +2353,18 @@ function RequestList({ onNav, onAgency, initFilter, onEditRecord }) {
                         <div><strong>Related comms:</strong> {relatedComms.length}</div>
                       </div>
                       <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                        <button onClick={(e) => { e.stopPropagation(); onEditRecord && onEditRecord({ type: "request", record: { ...req } }); }}
+                        {canEdit() && <button onClick={(e) => { e.stopPropagation(); onEditRecord && onEditRecord({ type: "request", record: { ...req } }); }}
                           style={{ padding: "4px 10px", fontSize: 11, fontWeight: 600, color: "#fff", backgroundColor: "#0F766E", border: "none", borderRadius: 4, cursor: "pointer", fontFamily: F }}>
                           Edit Request
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); onEditRecord && onEditRecord({ type: "task_create", record: { agency_id: req.agency_id || "", contact_id: req.sent_to_contact || "", dataset_id: req.dataset_id || "", request_id: req.id, title: "Task: " + req.title } }); }}
+                        </button>}
+                        {canTask() && <button onClick={(e) => { e.stopPropagation(); onEditRecord && onEditRecord({ type: "task_create", record: { agency_id: req.agency_id || "", contact_id: req.sent_to_contact || "", dataset_id: req.dataset_id || "", request_id: req.id, title: "Task: " + req.title } }); }}
                           style={{ padding: "4px 10px", fontSize: 11, fontWeight: 600, color: "#D97706", backgroundColor: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 4, cursor: "pointer", fontFamily: F }}>
                           + Task
-                        </button>
-                        <button onClick={(e) => deleteRequest(req, e)}
+                        </button>}
+                        {canDelete() && <button onClick={(e) => deleteRequest(req, e)}
                           style={{ padding: "4px 10px", fontSize: 11, fontWeight: 700, color: "#DC2626", backgroundColor: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: 4, cursor: "pointer", fontFamily: F }}>
                           Delete
-                        </button>
+                        </button>}
                         <button onClick={(e) => { e.stopPropagation(); onNav("agencies"); onAgency(req.agency_id); }}
                           style={{ padding: "4px 10px", fontSize: 11, fontWeight: 600, color: "#14B8A6", backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 4, cursor: "pointer", fontFamily: F }}>
                           View Agency {"\u2192"}
@@ -2632,7 +2691,7 @@ function TaskList({ onNav, onAgency, initFilter, onViewContact }) {
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "#171717", margin: 0, fontFamily: F }}>Tasks</h1>
           <p style={{ fontSize: 13, color: "#6B7280", margin: "4px 0 0" }}>{TASKS.filter(t => t.status !== "completed" && t.status !== "cancelled").length} open{overdueCount > 0 && <span style={{ color: "#DC2626", fontWeight: 600 }}> · {overdueCount} overdue</span>}</p>
         </div>
-        <button onClick={() => { setEditingTask(null); setShowForm(true); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}><Icon name="plus" size={15} color="#fff" /> New Task</button>
+        {canTask() && <button onClick={() => { setEditingTask(null); setShowForm(true); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", backgroundColor: "#0F766E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F }}><Icon name="plus" size={15} color="#fff" /> New Task</button>}
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
         {[["all","All"],["open","Open"],["in_progress","In Progress"],["blocked","Blocked"],["completed","Done"]].map(([v,l]) => (
@@ -2715,12 +2774,12 @@ function TaskList({ onNav, onAgency, initFilter, onViewContact }) {
                     </div>
                   )}
                   <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={(e) => { e.stopPropagation(); setEditingTask({...task}); setShowForm(true); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#fff", backgroundColor: "#0F766E", border: "none", borderRadius: 5, cursor: "pointer", fontFamily: F }}>Edit Task</button>
-                    {!task.agency_id && <button onClick={(e) => { e.stopPropagation(); const newTask = {...task}; setEditingTask(newTask); setShowForm(true); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#0D9488", backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 5, cursor: "pointer", fontFamily: F }}>+ Link Agency</button>}
-                    {!task.contact_id && task.agency_id && <button onClick={(e) => { e.stopPropagation(); const newTask = {...task}; setEditingTask(newTask); setShowForm(true); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#0D9488", backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 5, cursor: "pointer", fontFamily: F }}>+ Link Contact</button>}
-                    <button onClick={(e) => { e.stopPropagation(); setEditingTask({ task_type: "follow_up", priority: task.priority, status: "open", assigned_to: "", assigned_by: task.assigned_to, title: "Follow-up: " + task.title, due_date: "", agency_id: task.agency_id || "", contact_id: task.contact_id || "", dataset_id: task.dataset_id || "", description: "Follow-up to task: " + task.title, note_history: [] }); setShowForm(true); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#7C3AED", backgroundColor: "#EDE9FE", border: "1px solid #C4B5FD", borderRadius: 5, cursor: "pointer", fontFamily: F }}>Follow-Up Task</button>
-                    {!done && <button onClick={(e) => completeTask(task, e)} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#059669", backgroundColor: "#ECFDF5", border: "1px solid #D1FAE5", borderRadius: 5, cursor: "pointer", fontFamily: F }}>{"\u2713"} Complete</button>}
-                    {!done && <div style={{ position: "relative" }}>
+                    {canTask() && <button onClick={(e) => { e.stopPropagation(); setEditingTask({...task}); setShowForm(true); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#fff", backgroundColor: "#0F766E", border: "none", borderRadius: 5, cursor: "pointer", fontFamily: F }}>Edit Task</button>}
+                    {canTask() && !task.agency_id && <button onClick={(e) => { e.stopPropagation(); const newTask = {...task}; setEditingTask(newTask); setShowForm(true); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#0D9488", backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 5, cursor: "pointer", fontFamily: F }}>+ Link Agency</button>}
+                    {canTask() && !task.contact_id && task.agency_id && <button onClick={(e) => { e.stopPropagation(); const newTask = {...task}; setEditingTask(newTask); setShowForm(true); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#0D9488", backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 5, cursor: "pointer", fontFamily: F }}>+ Link Contact</button>}
+                    {canTask() && <button onClick={(e) => { e.stopPropagation(); setEditingTask({ task_type: "follow_up", priority: task.priority, status: "open", assigned_to: "", assigned_by: task.assigned_to, title: "Follow-up: " + task.title, due_date: "", agency_id: task.agency_id || "", contact_id: task.contact_id || "", dataset_id: task.dataset_id || "", description: "Follow-up to task: " + task.title, note_history: [] }); setShowForm(true); }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#7C3AED", backgroundColor: "#EDE9FE", border: "1px solid #C4B5FD", borderRadius: 5, cursor: "pointer", fontFamily: F }}>Follow-Up Task</button>}
+                    {canTask() && !done && <button onClick={(e) => completeTask(task, e)} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#059669", backgroundColor: "#ECFDF5", border: "1px solid #D1FAE5", borderRadius: 5, cursor: "pointer", fontFamily: F }}>{"\u2713"} Complete</button>}
+                    {canTask() && !done && <div style={{ position: "relative" }}>
                       <button onClick={(e) => { e.stopPropagation(); const el = e.currentTarget.nextSibling; el.style.display = el.style.display === "block" ? "none" : "block"; }} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, color: "#D97706", backgroundColor: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 5, cursor: "pointer", fontFamily: F }}>{"\u23F0"} Snooze</button>
                       <div style={{ display: "none", position: "absolute", left: 0, top: 34, backgroundColor: "#fff", borderRadius: 6, border: "1px solid #E8E4DF", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", zIndex: 9999, padding: 4, minWidth: 110 }}>
                         {[["3 days",3],["5 days",5],["10 days",10],["2 weeks",14],["30 days",30]].map(([lbl,days]) => <button key={days} onClick={(e) => { snoozeTask(task,days,e); e.currentTarget.parentElement.style.display="none"; }} style={{ display: "block", width: "100%", padding: "6px 10px", border: "none", backgroundColor: "transparent", color: "#525252", fontSize: 12, cursor: "pointer", textAlign: "left", borderRadius: 4, fontFamily: F }} onMouseEnter={e=>e.currentTarget.style.backgroundColor="#F0FDFA"} onMouseLeave={e=>e.currentTarget.style.backgroundColor="transparent"}>+ {lbl}</button>)}
@@ -2869,12 +2928,12 @@ function DataReviewPanel({ datasetId }) {
     <div style={{ backgroundColor: "#fff", borderRadius: 8, border: "1px solid #E8E4DF", overflow: "hidden" }}>
       <div style={{ padding: "14px 16px", borderBottom: "1px solid #E8E4DF", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h3 style={{ fontSize: 14, fontWeight: 700, color: "#171717", margin: 0, fontFamily: F }}>Data Reviews <span style={{ fontWeight: 400, color: "#9CA3A0" }}>({dsReviews.length})</span></h3>
-        <button onClick={() => setShowNew(!showNew)} style={{ padding: "4px 10px", backgroundColor: showNew ? "#FEE2E2" : "#F0FDFA", color: showNew ? "#DC2626" : "#0F766E", border: "none", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
+        {canReview() && <button onClick={() => setShowNew(!showNew)} style={{ padding: "4px 10px", backgroundColor: showNew ? "#FEE2E2" : "#F0FDFA", color: showNew ? "#DC2626" : "#0F766E", border: "none", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F }}>
           {showNew ? "\u2715 Cancel" : "+ New Review"}
-        </button>
+        </button>}
       </div>
 
-      {showNew && !submitted && (
+      {canReview() && showNew && !submitted && (
         <div style={{ padding: "16px", backgroundColor: "#FAF9F7", borderBottom: "1px solid #E8E4DF" }}>
           <div style={{ marginBottom: 12 }}>
             <label style={{ fontSize: 11, fontWeight: 600, color: "#6B7280", textTransform: "uppercase", fontFamily: F }}>Review Status</label>
@@ -2954,11 +3013,16 @@ function DataReviewPanel({ datasetId }) {
 const ROLE_CONFIG = {
   admin: { label: "Admin", color: "#DC2626", bg: "#FEE2E2", desc: "Full access. Manage users, settings, and all data." },
   specialist: { label: "Specialist", color: "#0F766E", bg: "#CCFBF1", desc: "Create and manage agencies, datasets, communications, requests." },
-  analyst: { label: "Analyst", color: "#7C3AED", bg: "#EDE9FE", desc: "View all data. Focus on dataset analysis and automation." },
+  analyst: { label: "Analyst", color: "#7C3AED", bg: "#EDE9FE", desc: "Create and manage agencies, contacts, datasets, communications, and requests. Cannot delete records." },
   viewer: { label: "Viewer", color: "#6B7280", bg: "#F5F2EE", desc: "Read-only access to all records." },
 };
 
 function AdminSettings() {
+  if (!isAdmin()) return (
+    <div style={{ padding: 40, textAlign: "center", color: "#9CA3A0", fontFamily: F, fontSize: 14 }}>
+      Settings is only available to Admins.
+    </div>
+  );
   const [tab, setTab] = useState("users");
   const [editingUser, setEditingUser] = useState(null);
   const [editingTemplate, setEditingTemplate] = useState(null);
@@ -3527,6 +3591,652 @@ function PasswordResetScreen({ onDone }) {
   );
 }
 
+// ═══ HELP CENTER ═══
+function HelpSectionHeader({ num, title, id }) {
+  return (
+    <div id={"help-" + id} style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 20, paddingTop: 8 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: "#D5D5D0", letterSpacing: "0.1em", fontFamily: F, flexShrink: 0 }}>{num}</span>
+      <h2 style={{ fontSize: 18, fontWeight: 700, color: "#171717", margin: 0, fontFamily: F }}>{title}</h2>
+    </div>
+  );
+}
+function HelpDivider() {
+  return <div style={{ height: 1, backgroundColor: "#E8E4DF", margin: "40px 0" }} />;
+}
+function HelpStepList({ steps }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {steps.map((step, i) => (
+        <div key={i} style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+          <div style={{ width: 24, height: 24, borderRadius: "50%", backgroundColor: "#CCFBF1", color: "#0F766E", fontSize: 11, fontWeight: 700, fontFamily: F, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>{i + 1}</div>
+          <p style={{ margin: 0, fontSize: 13, color: "#525252", lineHeight: 1.65, fontFamily: F, paddingTop: 3 }}>{step}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+function HelpTip({ children }) {
+  return (
+    <div style={{ backgroundColor: "#FFFBEB", border: "1px solid #FDE68A", borderLeft: "3px solid #D97706", borderRadius: 6, padding: "10px 14px", marginTop: 14, display: "flex", gap: 10, alignItems: "flex-start" }}>
+      <span style={{ color: "#D97706", fontSize: 13, flexShrink: 0, lineHeight: 1 }}>✦</span>
+      <p style={{ margin: 0, fontSize: 12, color: "#92400E", fontFamily: F, lineHeight: 1.6 }}>{children}</p>
+    </div>
+  );
+}
+function HelpNote({ children }) {
+  return (
+    <div style={{ backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", borderLeft: "3px solid #0F766E", borderRadius: 6, padding: "10px 14px", marginTop: 14 }}>
+      <p style={{ margin: 0, fontSize: 12, color: "#134E4A", fontFamily: F, lineHeight: 1.6 }}>{children}</p>
+    </div>
+  );
+}
+function HelpCodeBlock({ text }) {
+  return (
+    <pre style={{ backgroundColor: "#1E293B", color: "#94A3B8", fontSize: 11.5, fontFamily: "monospace", padding: "12px 14px", borderRadius: 6, margin: "12px 0 0", overflowX: "auto", lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{text}</pre>
+  );
+}
+function HelpInlineCode({ text }) {
+  return (
+    <code style={{ backgroundColor: "#F1F5F9", color: "#0F766E", fontSize: 11, fontFamily: "monospace", padding: "1px 5px", borderRadius: 3 }}>{text}</code>
+  );
+}
+function HelpCheckItem({ text }) {
+  return (
+    <div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "5px 0" }}>
+      <span style={{ color: "#0F766E", fontSize: 13, flexShrink: 0, lineHeight: 1.6 }}>✓</span>
+      <p style={{ margin: 0, fontSize: 13, color: "#525252", lineHeight: 1.6, fontFamily: F }}>{text}</p>
+    </div>
+  );
+}
+function HelpRefTable({ headers, rows }) {
+  return (
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
+      <thead>
+        <tr>
+          {headers.map((h, i) => (
+            <th key={i} style={{ padding: "8px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "#9CA3A0", textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "2px solid #E8E4DF", backgroundColor: "#FAF9F7" }}>{h}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row, i) => (
+          <tr key={i} style={{ borderBottom: "1px solid #E8E4DF", backgroundColor: i % 2 === 0 ? "#fff" : "#FAF9F7" }}>
+            {row.map((cell, j) => (
+              <td key={j} style={{ padding: "9px 12px", color: j === 0 ? "#0F766E" : "#525252", fontWeight: j === 0 ? 600 : 400, lineHeight: 1.5 }}>{cell}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+const HELP_MANUAL_NAV = [
+  { id: "purpose", label: "Purpose", num: "01" },
+  { id: "who", label: "Who Uses DataTrack", num: "02" },
+  { id: "signin", label: "Sign In & Account", num: "03" },
+  { id: "navigation", label: "Main Navigation", num: "04" },
+  { id: "workflows", label: "Everyday Workflows", num: "05" },
+  { id: "standards", label: "Data Entry Standards", num: "06" },
+  { id: "reference", label: "Quick Reference", num: "07" },
+];
+
+const HELP_WORKFLOWS = [
+  {
+    title: "Check Work Status",
+    steps: [
+      "Open Dashboard for a live count of open requests, overdue tasks, and recent activity.",
+      "Click any metric tile to jump directly to the filtered list.",
+      "Use the Tasks page to see your assigned items sorted by due date.",
+    ],
+  },
+  {
+    title: "Add or Update an Agency",
+    steps: [
+      "Go to Agencies and click New Agency.",
+      "Enter the agency name, type (city, county, special district), county, and website.",
+      "Add a general contact email and phone if known.",
+      "Use the Notes tab on the Agency detail page to log informal context about the relationship.",
+      "Save. The agency is immediately available in all linked dropdowns.",
+    ],
+    tip: "Use the official agency name as it appears in public records. Avoid abbreviations unless the agency itself uses them.",
+  },
+  {
+    title: "Add a Contact",
+    steps: [
+      "Go to Contacts and click New Contact, or use the + Contact button on an Agency detail page.",
+      "Select the linked agency from the dropdown.",
+      "Enter the contact's name, title, department, email, and phone.",
+      "Mark one email and one phone as primary if you add multiple.",
+      "Save. The contact appears in communication and request dropdowns.",
+      "Use the Notes tab on the Contact detail page to capture relationship context.",
+    ],
+  },
+  {
+    title: "Add or Update a Dataset",
+    steps: [
+      "Go to Datasets and click New Dataset.",
+      "Link the dataset to an agency and choose the category and acquisition method.",
+      "Set the current acquisition status and fill in format, refresh cadence, and cost fields if known.",
+      "Add the portal or source URL if one exists.",
+      "Save. Analysts can then add reviews from the dataset detail page.",
+    ],
+    tip: "If the dataset has a playbook or intake spec, paste the key details into the dataset notes so analysts have context.",
+  },
+  {
+    title: "Log a Communication",
+    steps: [
+      "Click Log Communication from the Communications page or any agency or contact detail page.",
+      "Choose the channel (Email, Phone, CPRA/FOIA, Portal) and direction (Inbound or Outbound).",
+      "Select the linked agency and, if applicable, the contact, dataset, or request.",
+      "Record the outcome and set a follow-up date if further action is needed.",
+      "Save. Communications are permanent log entries and cannot be edited after saving.",
+    ],
+    note: "Communications are intentionally log-only. If a detail was entered incorrectly, add a follow-up communication noting the correction.",
+  },
+  {
+    title: "Track a Request",
+    steps: [
+      "Go to Requests and click New Request.",
+      "Choose the request type: CPRA, FOIA, API Access, Direct Purchase, or Manual Data.",
+      "Link the agency, dataset, and assignee.",
+      "Move the request through statuses as it progresses.",
+      "Use the Notes tab on the request to preserve context between handoffs.",
+      "Log each communication from the linked agency directly on the request.",
+      "Close the request when the data is received or the effort is abandoned.",
+    ],
+    statusTable: {
+      headers: ["Status", "Meaning"],
+      rows: [
+        ["Draft", "Started but not yet submitted to the agency."],
+        ["Submitted", "Sent to the agency, awaiting response."],
+        ["In Review", "Agency is processing the request."],
+        ["Fulfilled", "Data received and ready for analyst review."],
+        ["Partially Fulfilled", "Some records received; others pending."],
+        ["Denied", "Request refused by the agency."],
+        ["Closed", "Effort complete or abandoned."],
+      ],
+    },
+  },
+  {
+    title: "Create and Manage Tasks",
+    steps: [
+      "Go to Tasks and click New Task, or click + Task from any agency, contact, or request detail page.",
+      "Set the task type, priority, due date, and assignee.",
+      "Add a note describing exactly what needs to happen.",
+      "Complete a task using the Complete button. Snooze it if it should resurface later.",
+      "Each status change and note is logged in the task history for handoff continuity.",
+    ],
+    statusTable: {
+      headers: ["Status", "Use it when"],
+      rows: [
+        ["Open", "Assigned and needs action."],
+        ["In Progress", "Actively being worked on."],
+        ["Snoozed", "Not urgent — set to resurface on a specific date."],
+        ["Blocked", "Cannot proceed without input or action from someone else."],
+        ["Completed", "Work is done."],
+      ],
+    },
+  },
+  {
+    title: "Review a Dataset",
+    steps: [
+      "Open the dataset from the Datasets page and click the Reviews tab.",
+      "Click New Review and select the review status.",
+      "Apply preset feedback tags that apply, then add custom notes for specific issues.",
+      "Save. The review is logged with the reviewer and date.",
+      "Update the dataset's acquisition status if the review changes the pipeline stage.",
+      "Add a task if follow-up is needed from the agency.",
+      "Use the Notes field on the review for issues not covered by a preset tag.",
+    ],
+    tip: "Use the preset tags for issues that come up repeatedly (missing fields, wrong format, incomplete coverage). Add custom notes for agency-specific or one-time issues.",
+  },
+  {
+    title: "Add Notes",
+    steps: [
+      "Open any agency, contact, dataset, request, or task detail page.",
+      "Click the Notes tab and type your note.",
+      "Notes are timestamped with your name and permanently attached to the record.",
+    ],
+    tip: "Good notes answer: what happened, what was agreed, what is still open, and who is responsible. Avoid one-word entries like 'called' or 'emailed'.",
+  },
+];
+
+function HelpUserManual() {
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <HelpSectionHeader num="01" title="Purpose" id="purpose" />
+      <p style={{ fontSize: 13, color: "#525252", lineHeight: 1.7, fontFamily: F, margin: "0 0 14px" }}>
+        DataTrack is a shared workspace for data acquisition teams tracking public-sector real estate datasets across California. It keeps agency contacts, data requests, communications, tasks, and analyst reviews in one place so the whole team always works from the same record.
+      </p>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", backgroundColor: "#CCFBF1", borderRadius: 20 }}>
+        <Icon name="globe" size={12} color="#0F766E" />
+        <span style={{ fontSize: 11.5, fontWeight: 600, color: "#0F766E", fontFamily: F }}>serve-foundation.github.io/DataTrack</span>
+      </div>
+
+      <HelpDivider />
+
+      <HelpSectionHeader num="02" title="Who Uses DataTrack" id="who" />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        {[
+          { role: "Admin", color: "#7C3AED", bg: "#EDE9FE", desc: "Manages users, roles, templates, and system settings. Can create and delete any record." },
+          { role: "Specialist", color: "#0891B2", bg: "#CFFAFE", desc: "Handles agency outreach, logs communications, manages requests, and creates tasks." },
+          { role: "Analyst", color: "#0F766E", bg: "#CCFBF1", desc: "Creates and manages agencies, contacts, datasets, communications, and requests. Reviews received datasets and submits analyst feedback. Cannot delete records." },
+          { role: "Viewer", color: "#525252", bg: "#F5F2EE", desc: "Read-only access to all records. Cannot create, edit, or delete anything." },
+        ].map(({ role, color, bg, desc }) => (
+          <div key={role} style={{ padding: "16px 18px", backgroundColor: "#fff", border: "1px solid #E8E4DF", borderRadius: 8 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 4, backgroundColor: bg, color, fontFamily: F, letterSpacing: "0.05em", textTransform: "uppercase" }}>{role}</span>
+            <p style={{ margin: "10px 0 0", fontSize: 12.5, color: "#525252", lineHeight: 1.6, fontFamily: F }}>{desc}</p>
+          </div>
+        ))}
+      </div>
+
+      <HelpDivider />
+
+      <HelpSectionHeader num="03" title="Sign In & Account Access" id="signin" />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div style={{ padding: "18px 20px", backgroundColor: "#fff", border: "1px solid #E8E4DF", borderRadius: 8 }}>
+          <p style={{ margin: "0 0 14px", fontSize: 11, fontWeight: 700, color: "#9CA3A0", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: F }}>Sign In</p>
+          <HelpStepList steps={["Open the app and enter your email and password.", "Click Sign In. DataTrack will load your records.", "To reset your password, click Forgot password? and check your email for a reset link."]} />
+        </div>
+        <div style={{ padding: "18px 20px", backgroundColor: "#fff", border: "1px solid #E8E4DF", borderRadius: 8 }}>
+          <p style={{ margin: "0 0 14px", fontSize: 11, fontWeight: 700, color: "#9CA3A0", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: F }}>Create an Account</p>
+          <HelpStepList steps={["Click Create account on the sign-in screen.", "Enter your full name, email, password, and requested role.", "Confirm your email by clicking the link Supabase sends."]} />
+        </div>
+      </div>
+
+      <HelpDivider />
+
+      <HelpSectionHeader num="04" title="Main Navigation" id="navigation" />
+      <p style={{ fontSize: 13, color: "#525252", lineHeight: 1.6, fontFamily: F, margin: "0 0 16px" }}>Use the left sidebar to navigate between areas. Your active page is saved between sessions.</p>
+      <div style={{ border: "1px solid #E8E4DF", borderRadius: 8, overflow: "hidden" }}>
+        <HelpRefTable
+          headers={["Area", "Use it for"]}
+          rows={[
+            ["Dashboard", "Team overview, pipeline status, overdue work, and quick links."],
+            ["Agencies", "Source agencies, jurisdiction details, linked contacts, datasets, and communications."],
+            ["Contacts", "People at agencies — contact methods and communication history."],
+            ["Datasets", "Target datasets, acquisition status, delivery format, cost, and analyst review."],
+            ["Communications", "Logged interactions with agencies, including follow-up tracking."],
+            ["Requests", "Formal and informal data request workflow tracking from draft to closure."],
+            ["Tasks", "Shared work queue for follow-ups, reviews, clarifications, and assignments."],
+            ["Settings", "User roles, email templates, and system configuration (Admin only)."],
+          ]}
+        />
+      </div>
+
+      <HelpDivider />
+
+      <HelpSectionHeader num="05" title="Everyday Workflows" id="workflows" />
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {HELP_WORKFLOWS.map(({ title, steps, tip, note, statusTable }) => (
+          <div key={title} style={{ padding: "20px 22px", backgroundColor: "#fff", border: "1px solid #E8E4DF", borderRadius: 8 }}>
+            <p style={{ margin: "0 0 14px", fontSize: 13, fontWeight: 700, color: "#0F766E", fontFamily: F }}>{title}</p>
+            <HelpStepList steps={steps} />
+            {tip && <HelpTip>{tip}</HelpTip>}
+            {note && <HelpNote>{note}</HelpNote>}
+            {statusTable && (
+              <div style={{ marginTop: 16, border: "1px solid #E8E4DF", borderRadius: 6, overflow: "hidden" }}>
+                <HelpRefTable headers={statusTable.headers} rows={statusTable.rows} />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <HelpDivider />
+
+      <HelpSectionHeader num="06" title="Data Entry Standards" id="standards" />
+      <div style={{ padding: "20px 22px", backgroundColor: "#fff", border: "1px solid #E8E4DF", borderRadius: 8 }}>
+        {[
+          "Use the full official agency name. No abbreviations unless the agency uses them publicly.",
+          "Use ISO date format (YYYY-MM-DD) when entering dates manually.",
+          "Check for an existing record before creating a new agency, contact, or dataset.",
+          "Fill in required fields completely. Partial records create gaps in reporting.",
+          "Assign every task and request to a named person. Unassigned items do not get done.",
+          "Set a due date on every task. Open-ended tasks are hard to prioritize.",
+          "Use the Notes field for context that does not fit elsewhere — not as the primary record.",
+          "Log communications as they happen, not days later. Details matter for CPRA timelines.",
+        ].map((item, i) => <HelpCheckItem key={i} text={item} />)}
+      </div>
+
+      <HelpDivider />
+
+      <HelpSectionHeader num="07" title="Quick Reference" id="reference" />
+      <div style={{ border: "1px solid #E8E4DF", borderRadius: 8, overflow: "hidden" }}>
+        <HelpRefTable
+          headers={["Need", "Go to"]}
+          rows={[
+            ["See all overdue tasks", "Dashboard → Overdue Tasks tile"],
+            ["Log a communication", "Communications → Log Communication, or any agency or contact detail page"],
+            ["Find a dataset's status", "Datasets → search by name or agency"],
+            ["View a request thread", "Requests → open request → Communications tab"],
+            ["Reassign a task", "Tasks → open task → edit assignee"],
+            ["Add a note to a record", "Open any detail page → Notes tab"],
+            ["Reset a password", "Sign-in screen → Forgot password?"],
+            ["Manage users and roles", "Settings → Users & Roles (Admin only)"],
+          ]}
+        />
+      </div>
+    </div>
+  );
+}
+
+const HELP_ESCALATION_TEMPLATE = `Subject: DataTrack Support Request — [Short Description]
+
+Reporter name:
+Reporter role:
+Date and time of issue:
+Browser and OS:
+App URL being used:
+
+What I was trying to do:
+
+What happened instead:
+
+Error message (exact text or screenshot):
+
+Steps already tried:
+
+Is this blocking your work? Yes / No`;
+
+const HELP_COMMON_ISSUES = [
+  {
+    id: "signin_issue", title: "I cannot sign in",
+    check: ["Confirm your email and password are correct. Passwords are case-sensitive.", "Check that you are using the same email address your account was created with.", "Try the Forgot password? flow to reset your password."],
+    tryList: ["Clear your browser cache and cookies, then try again.", "Try a different browser or an incognito / private window.", "Contact your Admin to confirm your account is active in Settings → Users & Roles."],
+  },
+  {
+    id: "noaccess", title: "I created an account but cannot use the app",
+    check: ["Check your email for a confirmation message from Supabase and click the link.", "Confirm your email address is verified in Supabase Auth.", "Ask your Admin to check that your account row exists in Settings → Users & Roles and is marked active."],
+    tryList: ["Sign out and sign back in after the Admin has activated your account."],
+  },
+  {
+    id: "resetmail", title: "Password reset email did not arrive",
+    check: ["Check your spam or junk folder.", "Confirm the email address you entered matches your account exactly.", "Wait up to 5 minutes — delivery can be delayed."],
+    tryList: ["Ask your Admin to resend the invite or trigger a reset from the Supabase dashboard.", "Verify that your Supabase project has the correct Site URL set to the deployed app URL."],
+  },
+  {
+    id: "loading", title: "Page shows \"Loading Supabase data…\" for too long",
+    tryList: ["Check your internet connection.", "Reload the page and try again.", "Open the browser console (F12 → Console) and look for fetch errors pointing to the Supabase URL."],
+  },
+  {
+    id: "loadfail", title: "Page shows \"Supabase load failed\"",
+    check: ["The Supabase project URL in the app may be wrong or the project may be paused.", "The anon key may have expired or been rotated.", "Row-level security policies may be blocking the read.", "One or more required tables may be missing from the database."],
+    tryList: ["Check the Supabase dashboard and confirm the project is active.", "Re-run the schema SQL if tables are missing.", "Verify the SUPABASE_URL and SUPABASE_ANON_KEY constants in the app match the Supabase project settings."],
+  },
+  {
+    id: "nosave", title: "A record will not save",
+    check: ["Confirm all required fields are filled in.", "Check for a visible error message near the Save button.", "Open the browser console and look for a Supabase error response."],
+    tryList: ["Reload and try again — the session may have timed out.", "Check that your role has permission to create or edit this record type."],
+  },
+  {
+    id: "nodelete", title: "I cannot delete an agency or request",
+    check: ["Agencies with linked contacts or datasets cannot be deleted until those linked records are removed first.", "Only Admins can delete certain record types."],
+    tryList: ["Remove or unlink all contacts and datasets from the agency, then try deleting again.", "Ask an Admin to delete the record if your role does not have delete permissions."],
+  },
+  {
+    id: "emptydropdown", title: "A contact or dataset dropdown is empty",
+    check: ["The linked agency may not have any contacts or datasets added yet.", "The agency may not be saved — confirm the agency record exists."],
+    tryList: ["Add the contact or dataset first, then return to the form and try again."],
+  },
+  {
+    id: "notask", title: "A task does not show up",
+    check: ["Check the filter on the Tasks page — the task may be filtered out by status or assignee.", "Snoozed tasks only reappear after their snooze date.", "The task may be assigned to a different user.", "Completed tasks are not shown by default — use the filter to include them."],
+  },
+  {
+    id: "staledata", title: "Data looks old or different for two users",
+    tryList: ["Reload the app — DataTrack loads data once per session.", "Sign out and sign back in to force a full data refresh.", "Ask the other user to reload and compare again."],
+  },
+  {
+    id: "signuplimit", title: "New account confirmation email was not received",
+    check: [
+      "Supabase's built-in email service is rate-limited to 3 confirmation emails per hour on the free plan. If several people signed up recently, the email may have been silently dropped.",
+      "Supabase does not queue dropped emails — once the limit is hit, emails for that hour are gone.",
+      "Check your spam or junk folder before assuming the email was not sent.",
+    ],
+    tryList: [
+      "Wait until the next hour and ask the user to request a new confirmation email by trying the Forgot password? flow or re-signing up.",
+      "An Admin can manually confirm the account: go to Supabase Dashboard → Authentication → Users → find the user → click the menu → Confirm.",
+      "To remove the limit entirely, configure a custom SMTP provider (e.g. Resend) under Supabase → Authentication → SMTP Settings. This replaces the built-in mailer and has no hourly cap.",
+      "For an internal team tool, the simplest fix is to disable email confirmation entirely: Supabase → Authentication → Providers → Email → toggle off Confirm email. New users can then sign in immediately after account creation.",
+    ],
+  },
+];
+
+function HelpTroubleshooting({ openIssues, toggleIssue, openTech, toggleTech }) {
+  const techSections = [
+    {
+      id: "localtest", title: "Run a local test",
+      content: (
+        <div>
+          <p style={{ margin: "0 0 10px", fontSize: 13, color: "#525252", fontFamily: F, lineHeight: 1.6 }}>Run a local HTTP server from the project folder. Do not open the HTML file directly — auth flows require HTTP.</p>
+          <HelpCodeBlock text={"python3 -m http.server 5174\n# Then open: http://localhost:5174/"} />
+          <p style={{ margin: "10px 0 0", fontSize: 12, color: "#9CA3A0", fontFamily: F }}>If port 5174 is in use, try 5175 or any available port.</p>
+        </div>
+      ),
+    },
+    {
+      id: "files", title: "Key files to check",
+      content: (
+        <div style={{ border: "1px solid #E8E4DF", borderRadius: 6, overflow: "hidden" }}>
+          <HelpRefTable
+            headers={["File", "Use"]}
+            rows={[
+              ["DataTrack_v11plus.jsx", "Main source — edit this for all logic and UI changes."],
+              ["DataTrack_v11plus.html", "Runnable HTML — keep in sync with the JSX after changes."],
+              ["index.html", "GitHub Pages entry point — same content as the HTML file."],
+              ["simple-create-account-gateway.sql", "Supabase trigger for new user signup flow."],
+              ["USER_MANUAL.md", "Plain-language user guide."],
+              ["TROUBLESHOOTING_MANUAL.md", "Troubleshooting steps for users and admins."],
+            ]}
+          />
+        </div>
+      ),
+    },
+    {
+      id: "supabase_cfg", title: "Supabase configuration checklist",
+      content: (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {[
+            "SUPABASE_URL in the app matches the project URL from Supabase → Settings → API.",
+            "SUPABASE_ANON_KEY matches the anon public key from the same page.",
+            "The Supabase project Site URL is set to the deployed GitHub Pages URL.",
+            "Both the GitHub Pages URL and localhost are in the Auth Redirect URLs list.",
+            "Row-level security policies allow reads for authenticated users on all required tables.",
+            "The simple-create-account-gateway.sql trigger has been run in the SQL Editor.",
+            "All required tables exist: agencies, contacts, datasets, communications, requests, tasks, notes, data_reviews, users, email_templates, feedback_presets.",
+          ].map((item, i) => <HelpCheckItem key={i} text={item} />)}
+        </div>
+      ),
+    },
+    {
+      id: "browser_checks", title: "Browser checks",
+      content: (
+        <div>
+          <p style={{ margin: "0 0 12px", fontSize: 13, color: "#525252", fontFamily: F, lineHeight: 1.6 }}>Open the browser console (F12 or Cmd+Option+I). Check the Console and Network tabs for errors. Common HTTP status codes:</p>
+          <div style={{ border: "1px solid #E8E4DF", borderRadius: 6, overflow: "hidden" }}>
+            <HelpRefTable
+              headers={["Status", "Meaning"]}
+              rows={[
+                ["401", "Not authenticated — the session may have expired. Sign out and sign back in."],
+                ["403", "Forbidden — row-level security is blocking the request. Check Supabase policies."],
+                ["404", "Table or resource not found — confirm the table exists in Supabase."],
+                ["0 / Failed to fetch", "Network error — Supabase project URL is unreachable or the project is paused."],
+              ]}
+            />
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "github_pages", title: "GitHub Pages checks",
+      content: (
+        <div>
+          <HelpStepList steps={[
+            "Confirm the latest commit to main has been pushed to the GitHub remote.",
+            "Check the Actions tab in GitHub for any Pages deployment failures.",
+            "Hard-reload the live page (Cmd+Shift+R or Ctrl+Shift+R) to bypass browser cache.",
+            "Verify the Pages source is set to the main branch root in GitHub → Settings → Pages.",
+          ]} />
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      <div style={{ backgroundColor: "#FFFBEB", border: "1px solid #FDE68A", borderLeft: "4px solid #D97706", borderRadius: 8, padding: "20px 22px", marginBottom: 32 }}>
+        <p style={{ margin: "0 0 14px", fontSize: 11, fontWeight: 700, color: "#D97706", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: F }}>Start Here</p>
+        <HelpStepList steps={[
+          "Reload the page. Most display issues resolve with a fresh load.",
+          "Sign out and sign back in. This forces a full data refresh from Supabase.",
+          "Try a different browser or incognito window to rule out extension conflicts.",
+          "Open the browser console (F12) and note any red error messages before searching below.",
+          "Check that you are on the latest deployed version of the app.",
+        ]} />
+        <div style={{ marginTop: 14 }}>
+          <HelpInlineCode text="https://serve-foundation.github.io/DataTrack/" />
+        </div>
+      </div>
+
+      <p style={{ fontSize: 11, fontWeight: 700, color: "#9CA3A0", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: F, margin: "0 0 12px" }}>Common User Issues</p>
+      <div style={{ border: "1px solid #E8E4DF", borderRadius: 8, overflow: "hidden", marginBottom: 32 }}>
+        {HELP_COMMON_ISSUES.map(({ id, title, check, tryList }, idx) => (
+          <div key={id} style={{ borderBottom: idx < HELP_COMMON_ISSUES.length - 1 ? "1px solid #E8E4DF" : "none" }}>
+            <button onClick={() => toggleIssue(id)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px", backgroundColor: openIssues[id] ? "#FAFAF9" : "#fff", border: "none", cursor: "pointer", fontFamily: F, textAlign: "left", gap: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: "#D1D5DB", letterSpacing: "0.08em", flexShrink: 0, minWidth: 26, fontFamily: F }}>{"#" + String(idx + 1).padStart(2, "0")}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#171717", fontFamily: F }}>{title}</span>
+              </div>
+              <span style={{ fontSize: 16, color: "#9CA3A0", display: "inline-block", transform: openIssues[id] ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0, lineHeight: 1 }}>›</span>
+            </button>
+            {openIssues[id] && (
+              <div style={{ padding: "2px 18px 18px 56px", backgroundColor: "#FAFAF9", borderTop: "1px solid #E8E4DF" }}>
+                {check && check.length > 0 && (
+                  <div style={{ marginBottom: 14 }}>
+                    <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA3A0", textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: F, margin: "14px 0 8px" }}>Check</p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      {check.map((item, i) => <HelpCheckItem key={i} text={item} />)}
+                    </div>
+                  </div>
+                )}
+                {tryList && tryList.length > 0 && (
+                  <div>
+                    <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA3A0", textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: F, margin: "14px 0 8px" }}>Try</p>
+                    <HelpStepList steps={tryList} />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {effectiveRole() === "admin" && (
+        <>
+          <p style={{ fontSize: 11, fontWeight: 700, color: "#9CA3A0", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: F, margin: "0 0 12px" }}>Technical Troubleshooting</p>
+          <div style={{ border: "1px solid #E8E4DF", borderRadius: 8, overflow: "hidden", marginBottom: 32 }}>
+            {techSections.map(({ id, title, content }, idx) => (
+              <div key={id} style={{ borderBottom: idx < techSections.length - 1 ? "1px solid #E8E4DF" : "none" }}>
+                <button onClick={() => toggleTech(id)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px", backgroundColor: openTech[id] ? "#FAFAF9" : "#fff", border: "none", cursor: "pointer", fontFamily: F, textAlign: "left", gap: 12 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#171717", fontFamily: F }}>{title}</span>
+                  <span style={{ fontSize: 16, color: "#9CA3A0", display: "inline-block", transform: openTech[id] ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0, lineHeight: 1 }}>›</span>
+                </button>
+                {openTech[id] && (
+                  <div style={{ padding: "2px 18px 18px", backgroundColor: "#FAFAF9", borderTop: "1px solid #E8E4DF" }}>
+                    {content}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      <p style={{ fontSize: 11, fontWeight: 700, color: "#9CA3A0", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: F, margin: "0 0 12px" }}>Known Product Constraints</p>
+      <div style={{ backgroundColor: "#FFFBEB", border: "1px solid #FDE68A", borderLeft: "3px solid #D97706", borderRadius: 8, padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8, marginBottom: 32 }}>
+        {[
+          "Communications cannot be edited after they are saved. Add a follow-up entry to correct a logged communication.",
+          "Changes made by one user are pushed to all connected sessions automatically. If two users edit the same record at the same moment, the last save wins.",
+          "File attachments are not supported. Reference file paths or storage locations in notes.",
+          "The app does not send automated reminders for overdue tasks or follow-up dates.",
+          "Deleted records cannot be recovered from within the app. Recovery requires a Supabase database restore.",
+        ].map((item, i) => (
+          <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+            <span style={{ color: "#D97706", fontSize: 12, flexShrink: 0, lineHeight: 1.65 }}>⚠</span>
+            <p style={{ margin: 0, fontSize: 12.5, color: "#92400E", fontFamily: F, lineHeight: 1.6 }}>{item}</p>
+          </div>
+        ))}
+      </div>
+
+    </div>
+  );
+}
+
+function HelpCenter() {
+  const [tab, setTab] = useState("manual");
+  const [activeSection, setActiveSection] = useState("purpose");
+  const [openIssues, setOpenIssues] = useState({});
+  const [openTech, setOpenTech] = useState({});
+  useEffect(() => {
+    if (tab !== "manual") return;
+    const onScroll = () => {
+      let current = HELP_MANUAL_NAV[0].id;
+      for (const { id } of HELP_MANUAL_NAV) {
+        const el = document.getElementById("help-" + id);
+        if (!el) continue;
+        if (el.getBoundingClientRect().top <= 100) current = id;
+      }
+      setActiveSection(current);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [tab]);
+
+  const toggleIssue = (id) => setOpenIssues(prev => ({ ...prev, [id]: !prev[id] }));
+  const toggleTech = (id) => setOpenTech(prev => ({ ...prev, [id]: !prev[id] }));
+  const scrollTo = (id) => {
+    setActiveSection(id);
+    const el = document.getElementById("help-" + id);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  return (
+    <div>
+      <div style={{ marginBottom: 28 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: "#171717", margin: "0 0 4px", fontFamily: F }}>Help Center</h1>
+        <p style={{ fontSize: 13, color: "#9CA3A0", margin: 0, fontFamily: F }}>User manual and troubleshooting reference for DataTrack.</p>
+      </div>
+      <div style={{ display: "flex", gap: 0, borderBottom: "2px solid #E8E4DF", marginBottom: 28 }}>
+        {[{ id: "manual", label: "User Manual" }, { id: "troubleshooting", label: "Troubleshooting" }].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "10px 20px", fontSize: 13, fontWeight: 600, color: tab === t.id ? "#0F766E" : "#6B7280", backgroundColor: "transparent", border: "none", borderBottom: tab === t.id ? "2px solid #0F766E" : "2px solid transparent", marginBottom: -2, cursor: "pointer", fontFamily: F }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === "manual" ? (
+        <div style={{ display: "flex", gap: 40, alignItems: "flex-start" }}>
+          <div style={{ width: 168, flexShrink: 0, position: "sticky", top: 24, alignSelf: "flex-start" }}>
+            <p style={{ fontSize: 10, fontWeight: 700, color: "#9CA3A0", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: F, margin: "0 0 10px" }}>On this page</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {HELP_MANUAL_NAV.map(({ id, label, num }) => (
+                <button key={id} onClick={() => scrollTo(id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 5, border: "none", backgroundColor: activeSection === id ? "#CCFBF1" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: F }}>
+                  <span style={{ fontSize: 9.5, fontWeight: 700, color: activeSection === id ? "#0F766E" : "#D1D5DB", letterSpacing: "0.06em", minWidth: 18, flexShrink: 0, fontFamily: F }}>{num}</span>
+                  <span style={{ fontSize: 12, fontWeight: activeSection === id ? 600 : 400, color: activeSection === id ? "#0F766E" : "#6B7280", lineHeight: 1.4, fontFamily: F }}>{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <HelpUserManual />
+        </div>
+      ) : (
+        <HelpTroubleshooting openIssues={openIssues} toggleIssue={toggleIssue} openTech={openTech} toggleTech={toggleTech} />
+      )}
+    </div>
+  );
+}
+
 // ═══ APP ═══
 function App() {
   const [page, setPage] = useState(getInitialPage);
@@ -3537,6 +4247,7 @@ function App() {
   const [recordForm, setRecordForm] = useState(null);
   const [pageFilter, setPageFilter] = useState({});
   const [saveKey, setSaveKey] = useState(0);
+  const [dashRole, setDashRole] = useState("admin");
   const [session, setSession] = useState(null);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
@@ -3566,19 +4277,39 @@ function App() {
 
   useEffect(() => {
     let mounted = true;
+    let realtimeChannel = null;
     if (!isSupabaseConfigured || !session) return;
     setSupabaseStatus({ loading: true, error: "", loaded: false });
     loadSupabaseSeedTables().then(({ error }) => {
       if (!mounted) return;
       setSupabaseStatus({ loading: false, error, loaded: !error });
-      if (!error) setSaveKey(k => k + 1);
+      if (!error) {
+        const u = SYSTEM_USERS.find(u => u.email === session.user.email);
+        CURRENT_ROLE = u?.role || "viewer";
+        setDashRole(CURRENT_ROLE);
+        setSaveKey(k => k + 1);
+        realtimeChannel = setupRealtimeSubscriptions(setSaveKey);
+      }
     });
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+      if (realtimeChannel && sb) sb.removeChannel(realtimeChannel);
+    };
   }, [session?.user?.id]);
 
   const signOut = async () => {
+    CURRENT_ROLE = "viewer";
+    PREVIEW_ROLE = null;
     if (sb) await sb.auth.signOut();
     setSession(null);
+  };
+
+  const handleDashRoleChange = (role) => {
+    setDashRole(role);
+    if (CURRENT_ROLE === "admin") {
+      PREVIEW_ROLE = role === "admin" ? null : role;
+      setSaveKey(k => k + 1);
+    }
   };
 
   const setActivePage = (pg) => {
@@ -3617,7 +4348,7 @@ function App() {
   const renderPage = () => {
     if (page === "agencies" && selAgency) return <AgencyDetail key={saveKey} agencyId={selAgency} onBack={() => setSelAgency(null)} onOpenForm={openCommForm} onDelete={deleteAgency} onEditRecord={setRecordForm} onViewContact={(cid) => { setSelContact(cid); setActivePage("contacts"); }} />;
     switch (page) {
-      case "dashboard": return <Dashboard key={saveKey} onNav={navTo} onAgency={setSelAgency} />;
+      case "dashboard": return <Dashboard key={saveKey} onNav={navTo} onAgency={setSelAgency} dashRole={dashRole} onDashRoleChange={handleDashRoleChange} />;
       case "agencies": return <AgencyList key={saveKey} onSelect={setSelAgency} initFilter={pageFilter} onNewRecord={setRecordForm} />;
       case "datasets": return <DatasetList key={saveKey} onNav={navTo} onAgency={setSelAgency} initFilter={pageFilter} onEditRecord={setRecordForm} />;
       case "communications": return <CommLog key={saveKey} onNav={navTo} onAgency={setSelAgency} onOpenForm={openCommForm} initFilter={pageFilter} onEditRecord={setRecordForm} />;
@@ -3627,6 +4358,7 @@ function App() {
       case "requests": return <RequestList key={saveKey} onNav={navTo} onAgency={setSelAgency} initFilter={pageFilter} onEditRecord={setRecordForm} onViewContact={(cid) => { setSelContact(cid); setActivePage("contacts"); }} />;
       case "tasks": return <TaskList key={saveKey} onNav={navTo} onAgency={setSelAgency} initFilter={pageFilter} onViewContact={(cid) => { setSelContact(cid); setActivePage("contacts"); }} />;
       case "settings": return <AdminSettings key={saveKey} />;
+      case "help": return <HelpCenter />;
       default: return null;
     }
   };
